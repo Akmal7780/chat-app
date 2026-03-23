@@ -110,28 +110,6 @@ class TypingIndicator(models.Model):
     def __str__(self):
         return f"{self.user} typing in {self.conversation}"
 
-class Notification(models.Model):
-
-    id = models.BigAutoField(primary_key=True)
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="notifications"
-    )
-
-    message = models.ForeignKey(
-        Message,
-        on_delete=models.CASCADE,
-        related_name="notifications"
-    )
-
-    is_read = models.BooleanField(default=False)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Notification for {self.user}"
 
 class Attachment(models.Model):
 

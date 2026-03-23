@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import toast from "react-hot-toast"
 import api from "../api/axios"
 import MessageList from "./MessageList"
 import MessageInput from "./MessageInput"
@@ -8,9 +9,11 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser }) {
   const [replyMessage, setReplyMessage] = useState(null)
   const typingTimeoutRef = useRef(null)
   const [messages, setMessages] = useState([])
+  const notificationSocketRef = useRef(null)
   const [conversation, setConversation] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const [loading, setLoading] = useState(false)
+  const notificationCountRef = useRef({})
   const [error, setError] = useState("")
   const [typingUser, setTypingUser] = useState(null)
   const [onlineUsers, setOnlineUsers] = useState(new Set())
@@ -44,11 +47,74 @@ const filteredMembers = groupMembers.filter(member =>
 
   return colors[Math.abs(hash) % colors.length]
 }
+
+const conversationRef = useRef(null)
+
+useEffect(() => {
+  conversationRef.current = conversation
+}, [conversation])
+
+useEffect(() => {
+  if (!socketRef.current || !conversation) return
+
+  if (socketRef.current.readyState === WebSocket.OPEN) {
+    socketRef.current.send(JSON.stringify({
+      type: "active_chat",
+      conversation_id: conversation.id
+    }))
+  }
+}, [conversation])
+
+// 🔔 NOTIFICATION SOCKET
+useEffect(() => {
+  const token = localStorage.getItem("token")
+  if (!token) return
+
+  const ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/notifications/?token=${token}`)
+
+  notificationSocketRef.current = ws
+
+  ws.onopen = () => console.log("🔔 Notification connected")
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data)
+
+    if (data.type === "notification") {
+      const activeConv = conversationRef.current
+
+      if (activeConv && Number(activeConv.id) === Number(data.conversation_id)) {
+        return
+      }
+
+      const sender = data.sender
+    const key = `${sender}_${data.conversation_id}`
+
+    notificationCountRef.current[key] =
+      (notificationCountRef.current[key] || 0) + 1
+
+    const count = notificationCountRef.current[key]
+
+    toast.success(
+      `💬 ${sender} (${count}): ${data.message}`,
+      {
+        id: key
+      }
+    )
+   
+    }
+  }
+
+  ws.onclose = () => console.log("🔌 Notification closed")
+
+  return () => {
+    ws.close()
+  }
+}, [currentUser]) 
   
-  // Set'lar - duplicate larni oldini olish uchun
-  const processedReads = useRef(new Set())      // Read receipt yuborilgan xabarlar
-  const processedMessages = useRef(new Set())   // WebSocket orqali kelgan xabarlar
-  const pendingMessages = useRef(new Map())     // Jo'natilayotgan xabarlar
+
+  const processedReads = useRef(new Set())      
+  const processedMessages = useRef(new Set())   
+  const pendingMessages = useRef(new Map())   
 const fetchGroupMembers = async () => {
   const convId = conversation?.id || selectedUser?.id
   if (!convId) return
@@ -60,7 +126,7 @@ const fetchGroupMembers = async () => {
     console.error("Members load error:", err)
   }
 }
-  // Conversation yaratish yoki mavjudini olish
+
   useEffect(() => {
     if (!selectedUser || !currentUser) return
 
@@ -69,6 +135,10 @@ const fetchGroupMembers = async () => {
   setError("");
 
   try {
+    if (selectedUser) {
+  const key = `${selectedUser.username}_${selectedUser.id}`
+  notificationCountRef.current[key] = 0
+}
     if (!currentUser) {
       setTimeout(() => initializeChat(), 500);
       return;
@@ -83,17 +153,6 @@ const fetchGroupMembers = async () => {
 
       await fetchMessages(conversationData.id);
 
-      // eski xabarlarni read qilish
-      setTimeout(() => {
-        setMessages((prev) => {
-          prev.forEach((msg) => {
-            if (msg.sender_id !== currentUser.id) {
-              markAsRead(msg.id);
-            }
-          });
-          return prev;
-        });
-      }, 500);
 
       connectWebSocket(conversationData.id);
       return;
@@ -111,17 +170,6 @@ const fetchGroupMembers = async () => {
 
     await fetchMessages(conversationData.id);
 
-    // eski xabarlarni read qilish
-    setTimeout(() => {
-      setMessages((prev) => {
-        prev.forEach((msg) => {
-          if (msg.sender_id !== currentUser.id) {
-            markAsRead(msg.id);
-          }
-        });
-        return prev;
-      });
-    }, 500);
 
     connectWebSocket(conversationData.id);
   } catch (error) {
@@ -132,6 +180,7 @@ const fetchGroupMembers = async () => {
 };
 
     initializeChat()
+
 
     // Cleanup
     return () => {
@@ -171,6 +220,12 @@ const fetchGroupMembers = async () => {
       setError("")
       processedReads.current.clear()
       processedMessages.current.clear()
+
+      // 🔥 ACTIVE CHAT 
+      ws.send(JSON.stringify({
+        type: "active_chat",
+        conversation_id: convId
+      }))
     }
 
     ws.onmessage = (event) => {
@@ -188,17 +243,17 @@ const fetchGroupMembers = async () => {
           processedMessages.current.add(messageKey)
         }
 
-        // YANGI XABAR KELDI
+        
         if (data.type === "message") {
           setMessages(prev => {
-            // Temperatura ID bilan tekshirish
+            
             const tempMessage = prev.find(m => 
               m.id?.toString().startsWith('temp_')
               && m.status === "sending"
             )
             
             if (tempMessage) {
-              // Temperatura xabarni haqiqiy ID bilan yangilash
+             
               return prev.map(m => 
                 m.id === tempMessage.id
                   ? { 
@@ -211,15 +266,15 @@ const fetchGroupMembers = async () => {
               )
             }
 
-            // Haqiqiy ID bilan tekshirish
+          
             const exists = prev.find(m => m.id === data.message_id)
             if (exists) return prev
             let replyObj = null
 
             if (data.reply_to) {
-              replyObj = data.reply_to   // 🔥 ENG MUHIM FIX
+              replyObj = data.reply_to  
             }
-            // Yangi xabar
+           
             const newMessage = {
               id: data.message_id,
               sender_id: data.sender_id,
@@ -237,7 +292,7 @@ const fetchGroupMembers = async () => {
           })
         }
         
-        // XABAR O'QILDI
+        
         else if (data.type === "read") {
           setMessages(prev => 
             prev.map(msg => 
@@ -298,12 +353,12 @@ const fetchGroupMembers = async () => {
                 return msg
               }
 
-              // 🔥 eski reactionni o‘chiramiz
+              
               reactions = reactions.filter(r => 
                 r && r.user_id !== newReaction.user_id
               )
 
-              // 🔥 yangi reaction qo‘shamiz
+             
               reactions.push(newReaction)
             }
 
@@ -373,7 +428,7 @@ const fetchGroupMembers = async () => {
     socketRef.current = ws
   }
 
-  // Xabarlarni yuklash
+
   const fetchMessages = async (convId) => {
     try {
 
@@ -404,7 +459,7 @@ const fetchGroupMembers = async () => {
     }
   }
 
-  // Xabar yuborish
+
   const sendMessage = (messageText, attachments = [], reply) => {
     if (!messageText?.trim() && attachments.length === 0) {
       alert("Message cannot be empty!")
@@ -488,7 +543,7 @@ const fetchGroupMembers = async () => {
     }, 2000)
   }
 
-  // Xabarni o'qilgan deb belgilash
+
   const markAsRead = (messageId) => {
     if (!socketRef.current || !isConnected) return
     
@@ -527,6 +582,19 @@ const fetchGroupMembers = async () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+useEffect(() => {
+  if (!isConnected || !messages.length) return
+
+  messages.forEach(msg => {
+    if (
+      msg.sender_id !== currentUser.id &&
+      msg.status !== "read"
+    ) {
+      markAsRead(msg.id)
+    }
+  })
+}, [messages, isConnected])
 
   if (loading) {
     return (

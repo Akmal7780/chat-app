@@ -3,12 +3,13 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-
+from apps.notifications.models import Notification
 
 from apps.messaging.models import Message, MessageRead
 from apps.conversations.models import Conversation,ConversationParticipant
 User = get_user_model()
 ONLINE_USERS = set()
+ACTIVE_USERS = {}  
 class ChatConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
@@ -113,7 +114,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             event_type = data.get("type")
             allowed = {
             "message", "typing_start", "typing_stop",
-            "read", "delivered", "edit_message", "delete_message"
+            "read", "delivered", "edit_message", "delete_message",
+            "active_chat"
             }
             if event_type not in allowed:
                 return
@@ -126,6 +128,32 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 print("💬 New message:", message_text)
 
                 message = await self.save_message(message_text, reply_to_id)
+
+                # 🔥 NOTIFICATION LOGIC
+                participants = await self.get_participants()
+
+                for user_id in participants:
+
+                    if user_id == self.user.id:
+                        continue
+
+                    active_conversation = ACTIVE_USERS.get(user_id)
+
+                    if active_conversation != int(self.conversation_id):
+
+                        await self.create_notification(user_id, message.id)
+
+                        await self.channel_layer.group_send(
+                            f"notifications_{user_id}",
+                            {
+                                "type": "send_notification",
+                                "message_id": message.id,
+                                "conversation_id": self.conversation_id,
+                                "sender": self.user.username,
+                                "message": message.content,
+                            }
+                        )
+
                 attachments = await self.get_attachments(message.id)
                 reply_data = None
                 if reply_to_id:
@@ -181,6 +209,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         "username": self.user.username
                     }
                 )
+            
+            elif event_type == "active_chat":
+                ACTIVE_USERS[self.user.id] = data.get("conversation_id")
 
             # MESSAGE READ
             elif event_type == "read":
@@ -571,3 +602,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
             for att in attachments
         ]
+    
+    @database_sync_to_async
+    def get_participants(self):
+        return list(
+            ConversationParticipant.objects.filter(
+                conversation_id=self.conversation_id
+            ).values_list("user_id", flat=True)
+        )
+    
+    @database_sync_to_async
+    def create_notification(self, user_id, message_id):
+        try:
+            Notification.objects.create(
+                user_id=user_id,
+                message_id=message_id
+            )
+        except Exception as e:
+            print("❌ Notification error:", e)

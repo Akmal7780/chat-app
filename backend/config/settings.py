@@ -67,7 +67,8 @@ INSTALLED_APPS = [
     # Local apps
     'apps.users',
     'apps.conversations',
-    'apps.messaging', 
+    'apps.messaging',
+    'apps.notifications', 
 
     'rest_framework.authtoken',
     
