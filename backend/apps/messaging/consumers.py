@@ -125,13 +125,35 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
                 message_text = data.get("message")
                 reply_to_id = data.get("reply_to")
+
+                attachments = data.get("attachments", [])
+
+                if attachments:
+                    file_type = attachments[0].get("file_type")
+
+                    if file_type == "image":
+                        message_type = "image"
+                    elif file_type == "video":
+                        message_type = "video"
+                    else:
+                        message_type = "file"
+                else:
+                    message_type = "text"
+
                 print("💬 New message:", message_text)
 
-                message = await self.save_message(message_text, reply_to_id)
+                # 🔥 BU O‘ZGARADI
+                message = await self.save_message(message_text, reply_to_id, message_type)
 
                 # 🔥 NOTIFICATION LOGIC
                 participants = await self.get_participants()
 
+                attachments_input = data.get("attachments", [])
+
+                image = None
+                if attachments_input:
+                    if attachments_input[0].get("file_type") == "image":
+                        image = attachments_input[0].get("file_url")
                 for user_id in participants:
 
                     if user_id == self.user.id:
@@ -141,20 +163,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
                     if active_conversation != int(self.conversation_id):
 
-                        await self.create_notification(user_id, message.id)
+                        # 🔥 notification text build
+                        notif_type, text = await self.build_notification_data(message)
+
+                        await self.create_notification(user_id, message.id, notif_type, text)
 
                         await self.channel_layer.group_send(
                             f"notifications_{user_id}",
                             {
                                 "type": "send_notification",
+                                "notification_type": notif_type,
+                                "text": text,
                                 "message_id": message.id,
                                 "conversation_id": self.conversation_id,
                                 "sender": self.user.username,
-                                "message": message.content,
+                                "sender_id": self.user.id,
+                                "image": image,
+                                "conversation_type": "private", 
                             }
                         )
 
-                attachments = await self.get_attachments(message.id)
                 reply_data = None
                 if reply_to_id:
                     reply_data = await self.get_reply_data(reply_to_id)
@@ -459,7 +487,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return False
 
     @database_sync_to_async
-    def save_message(self, message_text, reply_to_id=None):
+    def save_message(self, message_text, reply_to_id=None, message_type="text"):
         """Save message to database (with reply)"""
 
         conversation = Conversation.objects.get(id=self.conversation_id)
@@ -478,7 +506,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         message = Message.objects.create(
             conversation=conversation,
             sender=self.user,
-            message_type="text",
+            message_type=message_type,
             content=message_text,
             reply_to=reply_to  
         )
@@ -612,11 +640,32 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
     
     @database_sync_to_async
-    def create_notification(self, user_id, message_id):
+    def build_notification_data(self, message):
+        print(f"🔔 notif type: {message.message_type}, content: {message.content}")
+        sender = message.sender.username
+
+        if message.message_type == "text":
+            return "message", f"{sender}: {message.content}"
+
+        elif message.message_type == "image":
+            return "image", f"{sender} sent a photo 📷"
+
+        elif message.message_type == "file":
+            return "file", f"{sender} sent a file 📎"
+
+        elif message.message_type == "video":
+            return "video", f"{sender} sent a video 🎥"
+
+        return "message", f"{sender} sent a message"
+    
+    @database_sync_to_async
+    def create_notification(self, user_id, message_id, notif_type, text):
         try:
             Notification.objects.create(
                 user_id=user_id,
-                message_id=message_id
+                message_id=message_id,
+                type=notif_type,
+                text=text
             )
         except Exception as e:
             print("❌ Notification error:", e)

@@ -24,6 +24,8 @@ urlpatterns = [
     path("api/users/", include("apps.users.urls")),
     path("api/auth/", include("dj_rest_auth.urls")),
 
+    path("api/notifications/", include("apps.notifications.urls")),
+
     path(
         "api/auth/registration/",
         include("dj_rest_auth.registration.urls")

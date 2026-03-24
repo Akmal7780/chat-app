@@ -21,6 +21,7 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser }) {
   const reconnectTimeoutRef = useRef(null)
   const [showMembers, setShowMembers] = useState(false)
   const [groupMembers, setGroupMembers] = useState([])
+  const firstUnreadRef = useRef(null)
   const [memberSearchTerm, setMemberSearchTerm] = useState("") 
   // Filter members based on search
 const filteredMembers = groupMembers.filter(member => 
@@ -65,6 +66,13 @@ useEffect(() => {
   }
 }, [conversation])
 
+const getIcon = (type) => {
+  if (type === "image") return "📷"
+  if (type === "file") return "📎"
+  if (type === "video") return "🎥"
+  return "💬"
+}
+
 // 🔔 NOTIFICATION SOCKET
 useEffect(() => {
   const token = localStorage.getItem("token")
@@ -80,28 +88,64 @@ useEffect(() => {
     const data = JSON.parse(event.data)
 
     if (data.type === "notification") {
-      const activeConv = conversationRef.current
 
-      if (activeConv && Number(activeConv.id) === Number(data.conversation_id)) {
-        return
-      }
+  const activeConv = conversationRef.current
 
-      const sender = data.sender
-    const key = `${sender}_${data.conversation_id}`
+  if (activeConv && Number(activeConv.id) === Number(data.conversation_id)) {
+    return
+  }
 
-    notificationCountRef.current[key] =
-      (notificationCountRef.current[key] || 0) + 1
+  const sender = data.sender
+  const key = `${sender}_${data.conversation_id}`
 
-    const count = notificationCountRef.current[key]
+  notificationCountRef.current[key] =
+    (notificationCountRef.current[key] || 0) + 1
 
-    toast.success(
-      `💬 ${sender} (${count}): ${data.message}`,
-      {
-        id: key
-      }
-    )
-   
-    }
+  const count = notificationCountRef.current[key]
+
+  toast.success(
+  <div 
+    style={{ display: "flex", flexDirection: "column", cursor: "pointer" }}
+    onClick={() => {
+  if (data.conversation_type === "group") {
+    onSelectUser({
+      id: Number(data.conversation_id),
+      name: data.sender,
+      type: "group",
+    })
+  } else {
+    onSelectUser({
+      id: data.sender_id,
+      username: data.sender,
+      type: "private",
+    })
+  }
+  toast.dismiss(key)
+}}
+  >
+    <span style={{ fontWeight: "bold" }}>
+      {getIcon(data.notification_type)} {data.sender}
+      {count > 1 && (
+        <span style={{
+          marginLeft: "6px",
+          background: "#ef4444",
+          color: "white",
+          borderRadius: "10px",
+          padding: "1px 7px",
+          fontSize: "12px"
+        }}>
+          {count}
+        </span>
+      )}
+    </span>
+    <span>{data.text}</span>
+  </div>,
+  { 
+    id: key,
+    duration: 4000
+  }
+)
+}
   }
 
   ws.onclose = () => console.log("🔌 Notification closed")
@@ -194,6 +238,7 @@ const fetchGroupMembers = async () => {
       processedReads.current.clear()
       processedMessages.current.clear()
       pendingMessages.current.clear()
+      firstUnreadRef.current = null
     }
   }, [selectedUser, currentUser])
 
@@ -576,25 +621,7 @@ const fetchGroupMembers = async () => {
     return date.toLocaleDateString()
   }
 
-  // Auto-scroll
-  const messagesEndRef = useRef(null)
-  
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
 
-useEffect(() => {
-  if (!isConnected || !messages.length) return
-
-  messages.forEach(msg => {
-    if (
-      msg.sender_id !== currentUser.id &&
-      msg.status !== "read"
-    ) {
-      markAsRead(msg.id)
-    }
-  })
-}, [messages, isConnected])
 
   if (loading) {
     return (
@@ -887,8 +914,6 @@ useEffect(() => {
     }}
   />
 
-  {/* Scroll anchor */}
-  <div ref={messagesEndRef} />
 </div>
   )
 }

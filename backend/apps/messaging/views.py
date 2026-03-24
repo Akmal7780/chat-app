@@ -3,7 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser,JSONParser
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
+# Fayl boshiga import qo'shing
+from apps.notifications.views import send_message_notification
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
@@ -96,6 +97,8 @@ class MessageViewSet(viewsets.ModelViewSet):
                 "reply_to": reply_data,
             }
         )
+        if message.message_type in ["image", "video", "file"]:
+            send_message_notification(message)
 
             
 
