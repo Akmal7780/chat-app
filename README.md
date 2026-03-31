@@ -183,7 +183,7 @@ docker-compose up --build
 * Backend: http://127.0.0.1:8000
 * Frontend: http://localhost:5173
 * WebSocket: ws://127.0.0.1:8000/ws/chat/
-
+```
 ---
 
 ## 🔐 Authentication

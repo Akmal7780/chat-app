@@ -47,7 +47,7 @@ services:
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
     volumes:
-      - ./chat-frontend:/app
+      - D:\Projects\chat-app\chat-frontend:/app
     ports:
       - "5173:5173"
     restart: unless-stopped
