@@ -9,8 +9,6 @@ from apps.conversations.models import ConversationParticipant
 
 from .models import Notification
 
-
-# 🔥 1. Mark notifications as read (conversation)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def mark_as_read(request):
@@ -37,7 +35,6 @@ def mark_as_read(request):
     })
 
 
-# 🔥 2. Get all notifications (pagination ready)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_notifications(request):
@@ -62,7 +59,6 @@ def get_notifications(request):
     return Response(data)
 
 
-# 🔥 3. Unread count (badge uchun)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def unread_count(request):
@@ -77,7 +73,6 @@ def unread_count(request):
     })
 
 
-# 🔥 4. Mark single notification as read
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def mark_one_as_read(request, notification_id):
@@ -102,7 +97,6 @@ def mark_one_as_read(request, notification_id):
         )
 
 
-# 🔥 5. Delete notification (optional)
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_notification(request, notification_id):

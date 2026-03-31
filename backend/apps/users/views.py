@@ -1,8 +1,8 @@
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -11,20 +11,32 @@ from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.models import SocialAccount  
 
 from django.contrib.auth import get_user_model
-
+from django.db.models import Prefetch
+from rest_framework.pagination import PageNumberPagination
 from .models import User
 from .serializers import RegisterSerializer, UserSerializer
-
+from .models import UserPresence
+from .throttles import LoginThrottle
 User = get_user_model()
 
 
-# ✅ Register
+
+class SmallPagination(PageNumberPagination):
+    page_size = 20
+# =========================
+# REGISTER
+# =========================
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
+    permission_classes = [AllowAny]
+    def get_serializer_context(self):
+        return {"request": self.request}
 
 
-# ✅ JWT Login Serializer
+# =========================
+# JWT LOGIN
+# =========================
 class LoginSerializer(TokenObtainPairSerializer):
     username_field = "email"
 
@@ -39,12 +51,28 @@ class LoginSerializer(TokenObtainPairSerializer):
         return token
 
 
-# ✅ Login
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle]
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+
+        if response.status_code == 200:
+            user = User.objects.filter(email=request.data.get("email")).first()
+
+            if user:
+                response.data["user"] = UserSerializer(
+                    user,
+                    context={"request": request}
+                ).data
+
+        return response
 
 
-# 🔥 GOOGLE LOGIN (FIXED)
+# =========================
+# GOOGLE LOGIN
+# =========================
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
 
@@ -61,7 +89,7 @@ class GoogleLogin(SocialLoginView):
                 name = extra_data.get("name", "")
                 email = extra_data.get("email", "")
 
-                username = name.replace(" ", "").lower()
+                username = re.sub(r'\W+', '', name).lower()
 
                 if not username:
                     username = email.split("@")[0]
@@ -76,32 +104,56 @@ class GoogleLogin(SocialLoginView):
             except Exception as e:
                 print("Username error:", e)
 
-        response.data["user"] = {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-        }
+        response.data["user"] = UserSerializer(
+            user,
+            context={"request": request}
+        ).data
+        UserPresence.objects.get_or_create(user=user)
 
         return response
 
 
-# ✅ Users list
+# =========================
+# USERS LIST
+# =========================
 class UserListView(generics.ListAPIView):
+    pagination_class = SmallPagination
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return User.objects.exclude(id=self.request.user.id)
+        q = self.request.query_params.get("q")
+
+        qs = User.objects.exclude(
+        id=self.request.user.id
+    ).select_related('presence')
+
+        if q:
+            qs = qs.filter(username__icontains=q)
+
+        return qs.order_by("username")
+
+    def get_serializer_context(self):
+        return {"request": self.request}
 
 
-# ✅ Current user
+# =========================
+# CURRENT USER
+# =========================
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(
+            request.user,
+            context={"request": request}
+        )
         return Response(serializer.data)
 
+
+# =========================
+# UPDATE PROFILE (AVATAR 🔥)
+# =========================
 class UpdateProfileView(generics.UpdateAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
@@ -109,17 +161,24 @@ class UpdateProfileView(generics.UpdateAPIView):
     def get_object(self):
         return self.request.user
 
+    def get_serializer_context(self):
+        return {"request": self.request}
+
     def update(self, request, *args, **kwargs):
-        kwargs['partial'] = True
+        kwargs["partial"] = True
         return super().update(request, *args, **kwargs)
 
     def perform_update(self, serializer):
-        avatar = self.request.data.get("avatar")
+        avatar = self.request.FILES.get("avatar", "___missing___")
 
-        if avatar == "" or avatar is None:
-            if serializer.instance.avatar:
-                serializer.instance.avatar.delete(save=False)
+        if avatar == "" or self.request.data.get("avatar") == "":
+            instance = serializer.instance
 
-            serializer.save(avatar=None)
+            if instance.avatar:
+                instance.avatar.delete(save=False)
+
+            instance.avatar = None
+            instance.save()
+
         else:
             serializer.save()

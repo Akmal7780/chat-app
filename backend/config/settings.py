@@ -29,7 +29,7 @@ SECRET_KEY = env("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -71,6 +71,9 @@ INSTALLED_APPS = [
     'apps.notifications', 
 
     'rest_framework.authtoken',
+
+    #minio
+    'storages',
     
 ]
 
@@ -145,6 +148,21 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "100/minute",
+        "anon": "20/minute",
+
+        "message": "5/second",
+        "login": "5/minute",
+        "upload": "100/minute",
+    },
 }
 
 SIMPLE_JWT = {
@@ -155,9 +173,9 @@ SIMPLE_JWT = {
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -187,7 +205,7 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [("redis", 6379)],
         },
     },
 }
@@ -244,17 +262,56 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # ✅ MUHIM - statik fayllar yig'iladigan joy
+STATIC_ROOT = BASE_DIR / 'staticfiles' 
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',  # Agar static papkangiz bo'lsa
+    BASE_DIR / 'static', 
 ]
 
 AUTH_USER_MODEL = "users.User"
 REST_AUTH = {
     "USE_JWT": True,
     "JWT_AUTH_HTTPONLY": False,
-    "USER_DETAILS_SERIALIZER": "apps.users.serializers.UserSerializer",  # 🔥 MUHIM
+    "USER_DETAILS_SERIALIZER": "apps.users.serializers.UserSerializer", 
 }
-CORS_ALLOW_ALL_ORIGINS = True
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+#minio
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+AWS_ACCESS_KEY_ID = env("MINIO_ACCESS_KEY")
+AWS_SECRET_ACCESS_KEY = env("MINIO_SECRET_KEY")
+
+AWS_STORAGE_BUCKET_NAME = env("MINIO_BUCKET_NAME")
+
+AWS_S3_ENDPOINT_URL = env("MINIO_ENDPOINT")
+AWS_S3_REGION_NAME = env("MINIO_REGION")
+
+AWS_S3_ADDRESSING_STYLE = "path"
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+
+AWS_QUERYSTRING_AUTH = True
+
+AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = "private"
+AWS_S3_USE_SSL = False
+AWS_S3_VERIFY = False
+MINIO_URL_EXPIRY = 300
+# Celery
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
+PUBLIC_MINIO_URL = "http://localhost:9000"

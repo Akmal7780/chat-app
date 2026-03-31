@@ -4,6 +4,7 @@ import api from "../api/axios"
 import MessageList from "./MessageList"
 import MessageInput from "./MessageInput"
 import './ChatContainer.css'
+import { useOnlineUsers } from "../context/OnlineUsersContext";
 
 function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser }) {
   const [replyMessage, setReplyMessage] = useState(null)
@@ -16,17 +17,45 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser }) {
   const notificationCountRef = useRef({})
   const [error, setError] = useState("")
   const [typingUser, setTypingUser] = useState(null)
-  const [onlineUsers, setOnlineUsers] = useState(new Set())
+  const { onlineUsers, setOnlineUsers, setUsers } = useOnlineUsers();
   const socketRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const [showMembers, setShowMembers] = useState(false)
   const [groupMembers, setGroupMembers] = useState([])
   const firstUnreadRef = useRef(null)
   const [memberSearchTerm, setMemberSearchTerm] = useState("") 
+  const [search, setSearch] = useState("")
+  const [searchResults, setSearchResults] = useState([])
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
   // Filter members based on search
 const filteredMembers = groupMembers.filter(member => 
   member.username?.toLowerCase().includes(memberSearchTerm.toLowerCase())
 )
+
+const handleSearchResultClick = (messageId) => {
+  setSearch('')
+  setSearchResults([])
+
+  setTimeout(() => {
+    const messageElement = document.getElementById(`message-${messageId}`)
+    if (messageElement) {
+      messageElement.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'center' 
+      })
+      messageElement.classList.add('highlight-message')
+      setTimeout(() => {
+        messageElement.classList.remove('highlight-message')
+      }, 2000)
+    }
+  }, 100)
+}
+const highlightText = (text, search) => {
+  if (!search || !text) return text;
+  const regex = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  return text.replace(regex, '<mark>$1</mark>');
+};
   const getAvatarColor = (name = "") => {
   const colors = [
     "#f44336",
@@ -172,77 +201,94 @@ const fetchGroupMembers = async () => {
 }
 
   useEffect(() => {
-    if (!selectedUser || !currentUser) return
+  if (!selectedUser || !currentUser) return
 
-    const initializeChat = async () => {
-  setLoading(true);
-  setError("");
+  if (conversation?.id === selectedUser?.id) return
 
-  try {
-    if (selectedUser) {
-  const key = `${selectedUser.username}_${selectedUser.id}`
-  notificationCountRef.current[key] = 0
-}
-    if (!currentUser) {
-      setTimeout(() => initializeChat(), 500);
-      return;
+  const initializeChat = async () => {
+    setError("")
+
+    try {
+      // 🔔 notification reset
+      const key = `${
+        selectedUser.type === "group"
+          ? selectedUser.name
+          : selectedUser.username
+      }_${selectedUser.id}`
+
+      notificationCountRef.current[key] = 0
+
+      let conversationData = null
+
+      // =========================
+      // 👥 GROUP CHAT
+      // =========================
+      if (selectedUser.type === "group") {
+        conversationData = selectedUser
+        setConversation(conversationData)
+
+        await fetchMessages(conversationData.id)
+        connectWebSocket(conversationData.id)
+
+        return
+      }
+
+      // =========================
+      // 👤 PRIVATE CHAT
+      // =========================
+      const convRes = await api.post("/conversations/", {
+        participant_id: selectedUser.id,
+        type: "private",
+      })
+
+      conversationData = convRes.data
+
+      setConversation(conversationData)
+
+      await fetchMessages(conversationData.id)
+      connectWebSocket(conversationData.id)
+
+    } catch (error) {
+      setError("Failed to initialize chat. Please try again.")
     }
-
-    let conversationData = null;
-
-    // 👥 GROUP CHAT
-    if (selectedUser.type === "group") {
-      conversationData = selectedUser;
-      setConversation(conversationData);
-
-      await fetchMessages(conversationData.id);
-
-
-      connectWebSocket(conversationData.id);
-      return;
-    }
-
-    // 👤 PRIVATE CHAT
-    const convRes = await api.post("/conversations/", {
-      participant_id: selectedUser.id,
-      type: "private",
-    });
-
-    conversationData = convRes.data;
-
-    setConversation(conversationData);
-
-    await fetchMessages(conversationData.id);
-
-
-    connectWebSocket(conversationData.id);
-  } catch (error) {
-    setError("Failed to initialize chat. Please try again.");
-  } finally {
-    setLoading(false);
   }
-};
 
-    initializeChat()
+  initializeChat()
 
-
-    // Cleanup
-    return () => {
-      if (socketRef.current) {
-        console.log("🔌 Closing WebSocket connection...")
-        socketRef.current.close()
-      }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current)
-      }
-      processedReads.current.clear()
-      processedMessages.current.clear()
-      pendingMessages.current.clear()
-      firstUnreadRef.current = null
+  // =========================
+  // CLEANUP
+  // =========================
+  return () => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      console.log("🔌 Closing WebSocket connection...")
+      socketRef.current.close()
     }
-  }, [selectedUser, currentUser])
 
-  // WebSocket ulanish
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+    }
+
+    processedReads.current.clear()
+    processedMessages.current.clear()
+    pendingMessages.current.clear()
+    firstUnreadRef.current = null
+  }
+
+}, [selectedUser?.id])   
+
+  useEffect(() => {
+  const delay = setTimeout(() => {
+    if (search.trim()) {
+      setPage(1)
+      fetchSearch(1)
+    } else {
+      setSearchResults([])
+    }
+  }, 400)
+
+  return () => clearTimeout(delay)
+}, [search])
+
   const connectWebSocket = (convId) => {
 
     if (reconnectTimeoutRef.current) {
@@ -276,67 +322,48 @@ const fetchGroupMembers = async () => {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        
-        if (["message", "read","message_deleted", "message_edited"].includes(data.type) &&
-  data.message_id) {
-          const messageKey = `${data.type}_${data.message_id}`
-
-          if (processedMessages.current.has(messageKey)) {
-            return
-          }
-
-          processedMessages.current.add(messageKey)
-        }
 
         
-        if (data.type === "message") {
-          setMessages(prev => {
-            
-            const tempMessage = prev.find(m => 
-              m.id?.toString().startsWith('temp_')
-              && m.status === "sending"
-            )
-            
-            if (tempMessage) {
-             
-              return prev.map(m => 
-                m.id === tempMessage.id
-                  ? { 
-                      ...m, 
-                      id: data.message_id,
-                      status: "sent",
-                      reply_to: data.reply_to || m.reply_to   // 🔥 FIX
-                    }
-                  : m
-              )
-            }
+      if (data.type === "message") {
+  const msg = data.data
+   console.log("📨 Kelgan xabar:", msg)        
+  console.log("📨 temp_id:", msg?.temp_id)    
+  if (!msg) return
 
-          
-            const exists = prev.find(m => m.id === data.message_id)
-            if (exists) return prev
-            let replyObj = null
+  const messageKey = `message_${msg.id}`
+  if (processedMessages.current.has(messageKey)) return
+  processedMessages.current.add(messageKey)
+  if (processedMessages.current.size > 1000) processedMessages.current.clear()
 
-            if (data.reply_to) {
-              replyObj = data.reply_to  
-            }
-           
-            const newMessage = {
-              id: data.message_id,
-              sender_id: data.sender_id,
-              sender: data.sender,
-              content: data.message,
-              attachments: data.attachments || [],
-              created_at: data.created_at,
-              status: "sent",
-              is_deleted: false,
-              is_edited: false,
-              reply_to: replyObj
-            }
 
-            return [...prev, newMessage]
-          })
-        }
-        
+  const normalizedMsg = {
+    ...msg,
+    sender_id: msg.sender_id || msg.sender,
+  }
+
+ setMessages(prev => {
+  const tempMessage = prev.find(m =>
+    m.id === normalizedMsg.temp_id
+  )
+
+  if (tempMessage) {
+    return prev.map(m =>
+      m.id === normalizedMsg.temp_id
+        ? { ...normalizedMsg, status: "sent" }
+        : m
+    )
+  }
+
+  if (prev.some(m => m.id === normalizedMsg.id)) {
+    return prev
+  }
+
+  return [
+    ...prev,
+    { ...normalizedMsg, status: normalizedMsg.status || "sent" }
+  ]
+})
+}
         
         else if (data.type === "read") {
           setMessages(prev => 
@@ -347,6 +374,7 @@ const fetchGroupMembers = async () => {
             )
           )
         }
+        
         // ONLINE USERS SYNC
         else if (data.type === "online_users_list") {
           setOnlineUsers(new Set(data.users))
@@ -355,12 +383,31 @@ const fetchGroupMembers = async () => {
           setOnlineUsers(prev => new Set([...prev, Number(data.user_id)]))
         }
         else if (data.type === "user_offline") {
-          setOnlineUsers(prev => {
-            const updated = new Set(prev)
-            updated.delete(Number(data.user_id))
-            return updated
-          })
-        }
+  setOnlineUsers(prev => {
+    const updated = new Set(prev)
+    updated.delete(Number(data.user_id))
+    return updated
+  })
+
+  // 🔥 selectedUser update
+  if (Number(selectedUser?.id) === Number(data.user_id)) {
+    onSelectUser({
+      ...selectedUser,
+      last_seen: data.last_seen
+    })
+  }
+
+  // 🔥 USERS LIST update 
+  setUsers(prev =>
+  prev.map(u => {
+    console.log("COMPARE:", u.id, data.user_id)  
+
+    return String(u.id) === String(data.user_id)
+      ? { ...u, last_seen: data.last_seen }
+      : u
+  })
+)
+}
         
         // TYPING INDICATOR
         else if (data.type === "typing_start") {
@@ -446,6 +493,23 @@ const fetchGroupMembers = async () => {
     )
   )
 }
+
+else if (data.type === "file_infected") {
+  setMessages(prev =>
+    prev.map(msg =>
+      Number(msg.id) === Number(data.message_id)
+        ? {
+            ...msg,
+            is_deleted: true,
+            content: "🚨 File removed (virus detected)",
+            attachments: []
+          }
+        : msg
+    )
+  )
+
+  toast.error("File removed (virus detected)")
+}
       } catch (error) {
         console.error("❌ Error parsing message:", error)
       }
@@ -474,9 +538,21 @@ const fetchGroupMembers = async () => {
   }
 
 
+  const handleScroll = (e) => {
+  const bottom =
+    e.target.scrollHeight - e.target.scrollTop <= e.target.clientHeight + 50
+
+  if (bottom && hasMore) {
+    const next = page + 1
+    setPage(next)
+    fetchSearch(next)
+  }
+}
+
+
   const fetchMessages = async (convId) => {
     try {
-
+setLoading(true)
       if (!currentUser) {
         setTimeout(() => fetchMessages(convId), 200)
         return
@@ -502,7 +578,32 @@ const fetchGroupMembers = async () => {
       console.error("❌ Fetch messages error:", error)
       setError("Failed to load messages")
     }
+    finally {
+    setLoading(false)   
   }
+  }
+
+  const fetchSearch = async (pageNum) => {
+  if (!conversation) return
+
+  const res = await api.get("/messages/search/", {
+    params: {
+      q: search,
+      conversation_id: conversation.id,
+      page: pageNum
+    }
+  })
+
+  if (pageNum === 1) {
+    setSearchResults(res.data)
+  } else {
+    setSearchResults(prev => [...prev, ...res.data])
+  }
+
+  if (res.data.length < 20) {
+    setHasMore(false)
+  }
+}
 
 
   const sendMessage = (messageText, attachments = [], reply) => {
@@ -550,7 +651,8 @@ const fetchGroupMembers = async () => {
       type: "message",
       message: messageText.trim(),
       attachments: attachments,
-      reply_to: reply?.id || null   
+      reply_to: reply?.id || null,
+      temp_id: tempId   
     }))
     setReplyMessage(null)
 
@@ -564,7 +666,7 @@ const fetchGroupMembers = async () => {
             : msg
         )
       )
-    }, 5000)
+    }, 2000)
   }
 
   // Typing indicator
@@ -623,14 +725,6 @@ const fetchGroupMembers = async () => {
 
 
 
-  if (loading) {
-    return (
-      <div className="chat-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading chat...</p>
-      </div>
-    )
-  }
 
   if (error) {
     return (
@@ -645,251 +739,331 @@ const fetchGroupMembers = async () => {
 
   return (
     <div className="chat-container">
+      {loading && (
+      <div className="overlay-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading chat...</p>
+      </div>
+    )}
+
   {/* Chat Header */}
   <div className="chat-header">
-    <button onClick={onBack} className="back-button">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M19 12H5M5 12L12 19M5 12L12 5"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-
-    {selectedUser && (
-      <>
-        {/* Avatar */}
-        <div className="chat-avatar" 
-        onClick={() => {
-    if (selectedUser.type === "group") {
-      fetchGroupMembers()
-      setShowMembers(!showMembers)
-    }
-  }}
-  style={{ cursor: selectedUser.type === "group" ? "pointer" : "default" }}>
-          {selectedUser.avatar ? (
-            <img
-              src={selectedUser.avatar}
-              alt={selectedUser.username || selectedUser.name}
-            />
-          ) : (
-            <div
-              className="avatar-placeholder"
-              style={{
-                background: getAvatarColor(
-                  selectedUser.username || selectedUser.name
-                ),
-              }}
-            >
-              {(selectedUser.username || selectedUser.name)?.[0]?.toUpperCase()}
-            </div>
-          )}
-
-          {/* Online indicator faqat private chat uchun */}
-          {selectedUser.type !== "group" && (
-            <span
-              className={`online-dot ${
-                onlineUsers.has(Number(selectedUser.id)) ? "online" : "offline"
-              }`}
-            />
-          )}
-        </div>
-
-        {/* Chat info */}
-        <div className="chat-user-info">
-          <h3 className="chat-username">
-            {selectedUser.type === "group"
-              ? selectedUser.name
-              : selectedUser.username}
-          </h3>
-
-          {/* Group chat */}
-          {selectedUser.type === "group" ? (
-            <div className="user-status">
-              {selectedUser.members_count} members
-            </div>
-          ) : /* Private chat */
-          typingUser ? (
-            <div className="typing-indicator">
-              <span className="typing-text">Typing </span>
-
-              <div className="typing-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          ) : (
-            <div className="user-status">
-              {onlineUsers.has(Number(selectedUser.id)) ? (
-                <span>Online</span>
-              ) : selectedUser.last_seen ? (
-                <span>last seen {formatLastSeen(selectedUser.last_seen)}</span>
-              ) : (
-                <span>Offline</span>
-              )}
-            </div>
-          )}
-        </div>
-        {showMembers && selectedUser.type === "group" && (
-  <div className="group-members-dropdown">
-    <div className="dropdown-header">
-      <div className="header-title">
-        <span className="title-icon">👥</span>
-        <h4>Group Members</h4>
-      </div>
-      <span className="members-count">{groupMembers.length} members</span>
-      <button className="close-dropdown" onClick={() => {
-        setShowMembers(false);
-        setMemberSearchTerm(''); // Clear search 
-      }}>
-        ×
-      </button>
-    </div>
-
-    <div className="members-search">
-      <input 
-        type="text" 
-        placeholder="Search members..." 
-        className="search-input"
-        value={memberSearchTerm}
-        onChange={(e) => setMemberSearchTerm(e.target.value)}
-        autoFocus
+  <button onClick={onBack} className="back-button">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M19 12H5M5 12L12 19M5 12L12 5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
+    </svg>
+  </button>
+
+  {selectedUser && (
+    <>
+      {/* Avatar */}
+      <div className="chat-avatar" 
+        onClick={() => {
+          if (selectedUser.type === "group") {
+            fetchGroupMembers()
+            setShowMembers(!showMembers)
+          }
+        }}
+        style={{ cursor: selectedUser.type === "group" ? "pointer" : "default" }}>
+        {selectedUser.avatar_url || selectedUser.avatar ? (
+          <img
+            src={selectedUser.avatar_url || selectedUser.avatar}
+            alt={selectedUser.username || selectedUser.name}
+          />
+        ) : (
+          <div
+            className="avatar-placeholder"
+            style={{
+              background: getAvatarColor(
+                selectedUser.username || selectedUser.name
+              ),
+            }}
+          >
+            {(selectedUser.username || selectedUser.name)?.[0]?.toUpperCase()}
+          </div>
+        )}
+
+        {/* Online indicator only for private chat */}
+        {selectedUser.type !== "group" && (
+          <span
+            className={`online-dot ${
+              onlineUsers.has(Number(selectedUser.id)) ? "online" : "offline"
+            }`}
+          />
+        )}
+      </div>
+
+      {/* Chat info */}
+      <div className="chat-user-info">
+        <h3 className="chat-username">
+          {selectedUser.type === "group"
+            ? selectedUser.name
+            : selectedUser.username}
+        </h3>
+
+        {/* Group chat */}
+        {selectedUser.type === "group" ? (
+          <div className="user-status">
+            {selectedUser.members_count} members
+          </div>
+        ) : /* Private chat */
+        typingUser ? (
+          <div className="typing-indicator">
+            <span className="typing-text">Typing </span>
+
+            <div className="typing-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        ) : (
+          <div className="user-status">
+            {onlineUsers.has(Number(selectedUser.id)) ? (
+              <span>Online</span>
+            ) : (
+              <span>
+                {selectedUser.last_seen
+                  ? `last seen ${formatLastSeen(selectedUser.last_seen)}`
+                  : "Recently"}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  )}
+
+  {/* MODERN SEARCH BAR */}
+  <div className="search-wrapper">
+    <div className={`search-container ${search ? 'has-value' : ''}`}>
       <span className="search-icon">🔍</span>
-      {memberSearchTerm && (
+      <input
+        type="text"
+        placeholder="Search messages..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="search-input-modern"
+      />
+      {search && (
         <button 
-          className="clear-search"
-          onClick={() => setMemberSearchTerm('')}
+          className="clear-search-btn"
+          onClick={() => setSearch('')}
         >
-          ×
+          ✕
         </button>
       )}
     </div>
-
-    <div className="members-list">
-      {filteredMembers.length === 0 ? (
-        <div className="no-members">
-          <span className="no-members-icon">
-            {memberSearchTerm ? '🔍' : '👥'}
-          </span>
-          <p>
-            {memberSearchTerm 
-              ? `No members matching "${memberSearchTerm}"` 
-              : 'No members found'}
-          </p>
-          {memberSearchTerm && (
-            <button 
-              className="clear-search-btn"
-              onClick={() => setMemberSearchTerm('')}
-            >
-              Clear search
-            </button>
+    
+    {/* Search Results Dropdown */}
+    {search && (
+      <div className="search-results-dropdown">
+        <div className="search-results-header">
+          <span className="results-count">{searchResults.length} messages found</span>
+          <span className="search-term">"{search}"</span>
+        </div>
+        <div className="search-results-list" onScroll={handleScroll}>
+          {searchResults.length === 0 ? (
+            <div className="no-results">
+              <span className="no-results-icon">🔍</span>
+              <p>No messages found</p>
+              <span className="no-results-hint">Try different keywords</span>
+            </div>
+          ) : (
+            searchResults.map((msg, idx) => (
+              <div key={msg.id || idx} className="search-result-item" onClick={() => handleSearchResultClick(msg.id)}
+              style={{ cursor: 'pointer' }}>
+                
+                <div className="result-avatar">
+                  <div className="result-avatar-placeholder" style={{ background: getAvatarColor(msg.sender_username || msg.sender) }}>
+                    {(msg.sender_username || msg.sender)?.[0]?.toUpperCase()}
+                  </div>
+                </div>
+                <div className="result-content">
+                  <div className="result-header">
+                    <span className="result-sender">{msg.sender_username || msg.sender}</span>
+                    <span className="result-time">
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div 
+                    className="result-message"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightText(msg.content || msg.text || '', search)
+                    }}
+                  />
+                </div>
+              </div>
+            ))
+          )}
+          {hasMore && searchResults.length > 0 && (
+            <div className="loading-more">Loading more...</div>
           )}
         </div>
-      ) : (
-        filteredMembers.map(member => {
-          const isOnline = onlineUsers.has(Number(member.user));
-          const lastSeenText = member.last_seen ? formatLastSeen(member.last_seen) : null;
-          
-          return (
-            <div
-              key={member.id}
-              className="member-item"
-              onClick={() => {
-                setShowMembers(false)
-                setMemberSearchTerm('') // Clear search
-                if (member.user !== currentUser.id) {
-                  onSelectUser({
-                    id: member.user,
-                    username: member.username,
-                    type: "private",
-                    last_seen: member.last_seen
-                  })
-                }
-              }}
-            >
-              <div className="member-avatar-wrapper">
-                <div
-                  className="member-avatar"
-                  style={{ background: getAvatarColor(member.username) }}
-                >
-                  {member.username[0].toUpperCase()}
-                </div>
-                <span className={`member-status-dot ${isOnline ? 'online' : 'offline'}`} />
-              </div>
+      </div>
+    )}
+  </div>
 
-              <div className="member-details">
-                <div className="member-name-row">
-                  <span className="member-name">{member.username}</span>
-                  {member.user === currentUser.id && (
-                    <span className="member-badge">You</span>
-                  )}
-                </div>
-                
-                <div className="member-status-text">
-                  {isOnline ? (
-                    <span className="status-online">
-                      <span className="status-bullet">●</span> Online
-                    </span>
-                  ) : (
-                    <span className="status-offline">
-                      <span className="status-bullet">●</span>
-                      {lastSeenText ? `Last seen ${lastSeenText}` : 'Offline'}
-                    </span>
-                  )}
-                </div>
-              </div>
+  {showMembers && selectedUser?.type === "group" && (
+    <div className="group-members-dropdown">
+      <div className="dropdown-header">
+        <div className="header-title">
+          <span className="title-icon">👥</span>
+          <h4>Group Members</h4>
+        </div>
+        <span className="members-count">{groupMembers.length} members</span>
+        <button className="close-dropdown" onClick={() => {
+          setShowMembers(false);
+          setMemberSearchTerm('');
+        }}>
+          ×
+        </button>
+      </div>
 
-              {member.user !== currentUser.id && (
-                <button 
-                  className="message-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMembers(false);
-                    setMemberSearchTerm('');
+      <div className="members-search">
+        <input 
+          type="text" 
+          placeholder="Search members..." 
+          className="search-input"
+          value={memberSearchTerm}
+          onChange={(e) => setMemberSearchTerm(e.target.value)}
+          autoFocus
+        />
+        <span className="search-icon">🔍</span>
+        {memberSearchTerm && (
+          <button 
+            className="clear-search"
+            onClick={() => setMemberSearchTerm('')}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      <div className="members-list">
+        {filteredMembers.length === 0 ? (
+          <div className="no-members">
+            <span className="no-members-icon">
+              {memberSearchTerm ? '🔍' : '👥'}
+            </span>
+            <p>
+              {memberSearchTerm 
+                ? `No members matching "${memberSearchTerm}"` 
+                : 'No members found'}
+            </p>
+            {memberSearchTerm && (
+              <button 
+                className="clear-search-btn"
+                onClick={() => setMemberSearchTerm('')}
+              >
+                Clear search
+              </button>
+            )}
+          </div>
+        ) : (
+          filteredMembers.map(member => {
+            const isOnline = onlineUsers.has(Number(member.user));
+            const lastSeenText = member.last_seen ? formatLastSeen(member.last_seen) : null;
+            
+            return (
+              <div
+                key={member.id}
+                className="member-item"
+                onClick={() => {
+                  setShowMembers(false)
+                  setMemberSearchTerm('')
+                  if (member.user !== currentUser.id) {
                     onSelectUser({
                       id: member.user,
                       username: member.username,
                       type: "private",
                       last_seen: member.last_seen
-                    });
-                  }}
-                  title="Send message"
-                >
-                  💬
-                </button>
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
+                    })
+                  }
+                }}
+              >
+                <div className="member-avatar-wrapper">
+                  <div
+                    className="member-avatar"
+                    style={{ background: getAvatarColor(member.username) }}
+                  >
+                    {member.username[0].toUpperCase()}
+                  </div>
+                  <span className={`member-status-dot ${isOnline ? 'online' : 'offline'}`} />
+                </div>
 
-    <div className="dropdown-footer">
-      <button 
-        className="invite-btn" 
-        onClick={() => {
-          alert('Invite members feature coming soon!');
-        }}
-      >
-        <span className="invite-icon">➕</span>
-        Invite Members
-      </button>
+                <div className="member-details">
+                  <div className="member-name-row">
+                    <span className="member-name">{member.username}</span>
+                    {member.user === currentUser.id && (
+                      <span className="member-badge">You</span>
+                    )}
+                  </div>
+                  
+                  <div className="member-status-text">
+                    {isOnline ? (
+                      <span className="status-online">
+                        <span className="status-bullet">●</span> Online
+                      </span>
+                    ) : (
+                      <span className="status-offline">
+                        <span className="status-bullet">●</span>
+                        {lastSeenText ? `Last seen ${lastSeenText}` : 'Offline'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {member.user !== currentUser.id && (
+                  <button 
+                    className="message-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMembers(false);
+                      setMemberSearchTerm('');
+                      onSelectUser({
+                        id: member.user,
+                        username: member.username,
+                        type: "private",
+                        last_seen: member.last_seen
+                      });
+                    }}
+                    title="Send message"
+                  >
+                    💬
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="dropdown-footer">
+        <button 
+          className="invite-btn" 
+          onClick={() => {
+            alert('Invite members feature coming soon!');
+          }}
+        >
+          <span className="invite-icon">➕</span>
+          Invite Members
+        </button>
+      </div>
     </div>
-  </div>
-)}
-      </>
-    )}
-  </div>
+  )}
+</div>
 
   {/* Messages */}
   {currentUser ? (
     <MessageList
-      messages={messages}
+      messages={search ? searchResults : messages}
       currentUser={currentUser}
       selectedUser={selectedUser}
       onMessageVisible={markAsRead}
@@ -910,8 +1084,24 @@ const fetchGroupMembers = async () => {
     replyMessage={replyMessage}     
     onCancelReply={() => setReplyMessage(null)} 
     onFileUploaded={(message) => {
-      setMessages((prev) => [...prev, message]);
-    }}
+  setMessages((prev) => {
+    // 🔴 REMOVE TEMP
+    if (message.remove) {
+      return prev.filter((m) => m.id !== message.id)
+    }
+
+    // 🔴 UPDATE (progress)
+    const exists = prev.find((m) => m.id === message.id)
+    if (exists) {
+      return prev.map((m) =>
+        m.id === message.id ? { ...m, ...message } : m
+      )
+    }
+
+    // 🔴 ADD
+    return [...prev, message]
+  })
+}}
   />
 
 </div>

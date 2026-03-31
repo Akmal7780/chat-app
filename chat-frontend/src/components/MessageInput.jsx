@@ -54,9 +54,9 @@ function MessageInput({
 
 useEffect(() => {
   return () => {
-    if (filePreview) {
-      URL.revokeObjectURL(filePreview)
-    }
+    if (filePreview && filePreview.startsWith("blob:")) {
+  URL.revokeObjectURL(filePreview)
+}
   }
 }, [filePreview])
 
@@ -100,60 +100,166 @@ useEffect(() => {
     if (!file || !conversation) return
     
     setSelectedFile(file)
-    setFilePreview(URL.createObjectURL(file))
+    if (filePreview && filePreview.startsWith("blob:")) {
+  URL.revokeObjectURL(filePreview)
+}
+
+setFilePreview(URL.createObjectURL(file))
   }
 
-  // File upload
-  const handleFileUpload = async (file) => {
-    const preview = URL.createObjectURL(file)
-    const tempId = "temp_" + Date.now()
+  const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
 
-    const tempMessage = {
-      id: tempId,
-      sender_id: currentUser?.id,
-      sender_username: currentUser?.username,
-      content: "",
-      attachments: [
-        {
-          file_url: preview,
-          file_type: file.type.startsWith("image") ? "image" : "file",
-          file_name: file.name,
-          file_size: file.size
-        }
-      ],
-      created_at: new Date().toISOString(),
-      status: "sending"
+const handleFileUpload = async (file) => {
+  const preview = URL.createObjectURL(file)
+  const tempId = "temp_" + Date.now() + "_" + Math.random()
+  const isImage = file.type.startsWith("image")
+
+  const uploadedMap = {} // 🔥 safe progress
+
+  const tempMessage = {
+    id: tempId,
+    sender_id: currentUser?.id,
+    sender_username: currentUser?.username,
+    content: "",
+    attachments: [
+      {
+        file_url: preview,
+        file_type: isImage ? "image" : "file",
+        original_name: file.name,
+        file_size: file.size
+      }
+    ],
+    created_at: new Date().toISOString(),
+    status: "sending",
+    progress: 0
+  }
+
+  onFileUploaded?.(tempMessage)
+
+  try {
+    // =========================
+    // 1. INIT
+    // =========================
+    const initRes = await api.post("/upload/init/", {
+      file_name: file.name,
+      file_size: file.size,
+      conversation_id: conversation.id
+    })
+
+    const { upload_id, key } = initRes.data
+
+    // =========================
+    // 2. CHUNKS PREPARE
+    // =========================
+    const chunks = []
+    let partNumber = 1
+
+    for (let start = 0; start < file.size; start += CHUNK_SIZE) {
+      chunks.push({
+        chunk: file.slice(start, start + CHUNK_SIZE),
+        partNumber: partNumber++
+      })
     }
 
-    if (onFileUploaded) {
-      onFileUploaded(tempMessage)
-    }
+    // =========================
+    // 3. LIMIT PARALLEL 
+    // =========================
+    const CONCURRENCY = 3
+    const parts = []
 
-    try {
+    const uploadChunk = async ({ chunk, partNumber }) => {
       const formData = new FormData()
-      formData.append("conversation", conversation.id)
-      formData.append("file", file)
-      formData.append("message_type", file.type.startsWith("image") ? "image" : "file")
+      formData.append("file", new Blob([chunk], { type: file.type }), file.name)
+      formData.append("key", key)
+      formData.append("upload_id", upload_id)
+      formData.append("part_number", partNumber)
 
-      await api.post("/messages/", formData, {
-        headers: { "Content-Type": "multipart/form-data" }
+      const res = await api.post("/upload/part-direct/", formData)
+
+      // 🔥 SAFE PROGRESS
+      uploadedMap[partNumber] = chunk.size
+
+      const totalUploaded = Object.values(uploadedMap)
+        .reduce((a, b) => a + b, 0)
+
+      const percent = Math.round((totalUploaded / file.size) * 100)
+
+      onFileUploaded?.({
+        ...tempMessage,
+        progress: percent
       })
 
-      setSelectedFile(null)
-      setFilePreview(null)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-
-    } catch (error) {
-      console.error("❌ File upload error:", error)
+      return {
+        ETag: res.data.ETag,
+        PartNumber: partNumber
+      }
     }
-  }
 
-  // Cancel file
-  const cancelFile = () => {
+    // 🔥 batch processing (with limit)
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch = chunks.slice(i, i + CONCURRENCY)
+
+      const results = await Promise.all(
+        batch.map(uploadChunk)
+      )
+
+      parts.push(...results)
+    }
+
+    parts.sort((a, b) => a.PartNumber - b.PartNumber)
+
+    // =========================
+    // 4. COMPLETE
+    // =========================
+    await api.post("/upload/complete/", {
+      key,
+      upload_id,
+      parts,
+      conversation_id: conversation.id,
+      file_name: file.name,
+      size: file.size
+    })
+
+    // 🔥 TEMP REMOVE
+    onFileUploaded?.({
+      id: tempId,
+      remove: true
+    })
+
+    // =========================
+    // CLEANUP
+    // =========================
+    if (preview.startsWith("blob:")) {
+      URL.revokeObjectURL(preview)
+    }
+
     setSelectedFile(null)
     setFilePreview(null)
-    if (fileInputRef.current) fileInputRef.current.value = ""
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+
+  } catch (error) {
+    console.error("❌ Upload error:", error)
+
+    onFileUploaded?.({
+      ...tempMessage,
+      status: "error"
+    })
   }
+}
+  // Cancel file
+  const cancelFile = () => {
+  if (filePreview && filePreview.startsWith("blob:")) {
+    URL.revokeObjectURL(filePreview)
+  }
+
+  setSelectedFile(null)
+  setFilePreview(null)
+
+  if (fileInputRef.current) fileInputRef.current.value = ""
+}
 
   // Drag & Drop handlers
   const handleDragEnter = (e) => {
@@ -212,7 +318,7 @@ useEffect(() => {
       ref={dropZoneRef}
     >
 
- {/* 🔥 REPLY PREVIEW SHU YERGA */}
+ {/* 🔥 REPLY PREVIEW */}
     {replyMessage && (
       <div className="reply-preview">
         <div className="reply-content">

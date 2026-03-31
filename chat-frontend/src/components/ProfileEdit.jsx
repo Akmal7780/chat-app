@@ -6,7 +6,7 @@ function ProfileEdit({ user, onClose, onUpdate }) {
   const [username, setUsername] = useState(user.username || "");
   const [bio, setBio] = useState(user.bio || "");
   const [avatarFile, setAvatarFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(user.avatar || "");
+  const [previewUrl, setPreviewUrl] = useState(user.avatar_url || "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   
@@ -23,9 +23,9 @@ function ProfileEdit({ user, onClose, onUpdate }) {
 
 useEffect(() => {
   return () => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+  URL.revokeObjectURL(previewUrl);
+}
   };
 }, [previewUrl]);
 
@@ -114,10 +114,15 @@ const handleRemoveImage = () => {
 
     const updatedUser = res.data;
 
-    // 🔥 local update
-    localStorage.setItem("user", JSON.stringify(updatedUser));
+    // 🔥 FORCE CLEAN
+    const cleanUser = {
+      ...updatedUser,
+      avatar_url: updatedUser.avatar_url || null
+    };
 
-    onUpdate(updatedUser);
+    localStorage.setItem("user", JSON.stringify(cleanUser));
+
+    onUpdate(cleanUser);
     onClose();
 
   } catch (err) {
@@ -216,21 +221,6 @@ const handleRemoveImage = () => {
                   Select image
                 </button>
                 
-                <button
-                  type="button"
-                  className="url-btn"
-                  onClick={() => {
-                    const url = prompt("Enter the image URL:");
-                    if (url) {
-                      setPreviewUrl(url);
-                      setAvatarFile(null); 
-                    }
-                  }}
-                  disabled={loading}
-                  title="Upload via URL"
-                >
-                  <span className="url-icon">🔗</span>
-                </button>
               </div>
 
               {errors.avatar && (

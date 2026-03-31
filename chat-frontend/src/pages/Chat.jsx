@@ -75,6 +75,9 @@ function Chat() {
       </div>
     )
   }
+  const hasAvatar =
+  currentUser?.avatar_url &&
+  currentUser.avatar_url.trim() !== ""
 
   return (
     <div className="chat-main">
@@ -97,13 +100,17 @@ function Chat() {
             onClick={() => setShowEdit(true)}   // 🔥 PROFILE EDIT OPEN
             style={{ cursor: "pointer" }}
           >
-            <div className="user-avatar neon-glow">
-              {currentUser?.avatar ? (
-                <img src={currentUser.avatar} alt="avatar" />
-              ) : (
-                currentUser?.username?.[0]?.toUpperCase() || "U"
-              )}
-            </div>
+            
+
+<div className="user-avatar neon-glow">
+  {hasAvatar ? (
+    <img src={currentUser.avatar_url} alt="avatar" />
+  ) : (
+    <span>
+      {currentUser?.username?.[0]?.toUpperCase() || "U"}
+    </span>
+  )}
+</div>
 
             <div className="user-details">
               <h3>{currentUser?.username}</h3>
@@ -155,12 +162,20 @@ function Chat() {
 
       {/* 🔥 PROFILE EDIT MODAL */}
       {showEdit && (
-        <ProfileEdit
-          user={currentUser}
-          onClose={() => setShowEdit(false)}
-          onUpdate={(updatedUser) => setCurrentUser(updatedUser)}
-        />
-      )}
+  <ProfileEdit
+    user={currentUser}
+    onClose={() => setShowEdit(false)}
+    onUpdate={(updatedUser) => {
+      const cleanUser = {
+        ...updatedUser,
+        avatar_url: updatedUser.avatar_url || null
+      }
+
+      setCurrentUser(cleanUser)
+      localStorage.setItem("user", JSON.stringify(cleanUser))
+    }}
+  />
+)}
 
     </div>
   )

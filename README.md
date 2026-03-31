@@ -1,4 +1,8 @@
-# 💬 Real-Time Chat Application
+![Django](https://img.shields.io/badge/Django-Backend-green)
+![React](https://img.shields.io/badge/React-Frontend-blue)
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
+![ClamAV](https://img.shields.io/badge/Security-ClamAV-red)
+# 💬 Real-Time Chat Application (Django + Channels + React + Celery + ClamAV + MinIO)
 
 A modern real-time chat application built with **Django + Channels + React**.
 Supports messaging, replies, reactions, file sharing, and real-time updates.
@@ -19,6 +23,11 @@ Supports **JWT authentication and Google OAuth login**.
 * 🟢 Online/offline status
 * 🗑️ Edit & delete messages
 * 👥 Group chat support
+* 🧩 Chunk file upload (large files support)
+* 🛡️ Virus scanning with ClamAV (async via Celery)
+* ☁️ Object storage with MinIO (S3 compatible)
+* ⚡ Background task processing (Celery + Redis)
+* 🔍 Message search functionality
 
 ---
 
@@ -44,6 +53,22 @@ Supports **JWT authentication and Google OAuth login**.
 * Google OAuth 2.0
 
 ---
+
+### Infrastructure
+
+* Docker & Docker Compose
+* MinIO (S3 storage)
+* ClamAV (virus scanning)
+* Celery (background jobs)
+
+## 🧠 Architecture Overview
+
+- Django REST API handles business logic
+- Django Channels manages WebSocket connections
+- Redis is used as a message broker and channel layer
+- Celery processes background tasks (file scanning)
+- MinIO stores uploaded files
+- ClamAV scans files for viruses
 
 ## 📁 Project Structure
 
@@ -99,11 +124,20 @@ Create `.env` file:
 SECRET_KEY=your-secret-key
 DEBUG=True
 
-DB_NAME=your_db
-DB_USER=your_user
+DB_NAME=chatdb
+DB_USER=postgres
 DB_PASSWORD=your_password
-DB_HOST=localhost
+DB_HOST=db
 DB_PORT=5432
+
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET_NAME=chatapp
+MINIO_ENDPOINT=http://minio:9000
+
+MINIO_REGION=us-east-1
+
+CELERY_BROKER_URL=redis://redis:6379/0
 ```
 
 Apply migrations:
@@ -136,6 +170,13 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id
 ```
 
 ---
+
+## 🐳 Run with Docker (Recommended)
+
+Make sure you have Docker and Docker Compose installed.
+
+```bash
+docker-compose up --build
 
 ## 🔄 Development Workflow
 
@@ -194,11 +235,27 @@ This project supports two authentication methods:
   <img src="./screenshots/group-chat.jpg" width="700"/>
 </p>
 
+
+---
+## 🛡️ Security
+
+- All uploaded files are scanned using ClamAV
+- Infected files are automatically deleted
+- Asynchronous scanning via Celery workers
+- Rate limiting applied using DRF throttling
+- JWT-based secure authentication
 ---
 
-## 📌 Future Improvements
+---
+## ⚡ Highlights
 
-* 🔔 Push notifications
+- Production-ready scalable architecture
+- Real-time messaging with WebSockets
+- Secure file uploads with antivirus scanning (ClamAV)
+- Asynchronous processing with Celery & Redis
+- Object storage integration with MinIO (S3-compatible)
+---
+## 📌 Future Improvements
 * 🎤 Voice messages
 * 📹 Video calls
 * 📱 Mobile app (React Native)

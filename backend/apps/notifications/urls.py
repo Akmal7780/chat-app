@@ -6,10 +6,10 @@ urlpatterns = [
     # 🔔 Get all notifications
     path("", views.get_notifications, name="get_notifications"),
 
-    # 🔔 Unread count (badge uchun)
+    # 🔔 Unread count 
     path("unread-count/", views.unread_count, name="unread_count"),
 
-    # 🔔 Mark all as read (conversation bo‘yicha)
+    # 🔔 Mark all as read 
     path("mark-read/", views.mark_as_read, name="mark_as_read"),
 
     # 🔔 Mark single notification

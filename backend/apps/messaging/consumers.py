@@ -4,13 +4,26 @@ from channels.db import database_sync_to_async
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from apps.notifications.models import Notification
-
+from apps.messaging.serializers import MessageSerializer
 from apps.messaging.models import Message, MessageRead
 from apps.conversations.models import Conversation,ConversationParticipant
+from apps.users.models import UserPresence   # 👈 qo‘sh
+import time
+import redis
+
+redis_client = redis.Redis(
+    host="127.0.0.1",
+    port=6379,
+    db=0,
+    decode_responses=True
+)
 User = get_user_model()
 ONLINE_USERS = set()
 ACTIVE_USERS = {}  
+USER_CONNECTION_COUNT = {}  # {user_id: connection_count}
 class ChatConsumer(AsyncWebsocketConsumer):
+    def is_rate_limited(self, *args, **kwargs):
+            return False
 
     async def connect(self):
 
@@ -49,11 +62,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
         print("✅ WebSocket connected")
+        await self.set_user_online()
+        
         await self.channel_layer.group_add(
             "online_users",
             self.channel_name
         )
+        # ✅ CONNECTION COUNT 
+        USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 0) + 1
         ONLINE_USERS.add(self.user.id)
+        
+        await self.channel_layer.group_send(
+            "online_users",
+            {
+                "type": "user_online",
+                "user_id": self.user.id,
+                "username": self.user.username
+            }
+        )
 
         await self.channel_layer.group_send(
             "online_users",
@@ -80,18 +106,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
 
         print(f"🔌 WebSocket disconnected: {close_code}")
-        ONLINE_USERS.discard(self.user.id)
-
-        await self.channel_layer.group_send(
-            "online_users",
-            {
+       # ✅ CONNECTION COUNT 
+        USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 1) - 1
+        
+        # ✅ Offline only when all connections are closed
+        if USER_CONNECTION_COUNT.get(self.user.id, 0) <= 0:
+            USER_CONNECTION_COUNT.pop(self.user.id, None)
+            ONLINE_USERS.discard(self.user.id)
+            
+            await self.update_last_seen()  
+            now = timezone.now()
+            await self.channel_layer.group_send("online_users", {
+                "type": "user_offline",
+                "user_id": self.user.id,
+                "username": self.user.username,
+                "last_seen": str(now)
+            })
+            await self.channel_layer.group_send("online_users", {
                 "type": "online_users_list",
                 "users": list(ONLINE_USERS)
-            }
-        )
-
-
-        await self.update_last_seen()
+            })
 
         await self.channel_layer.group_discard(
         "online_users",
@@ -122,87 +156,55 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             # MESSAGE SEND
             if event_type == "message":
-
+                # 🔥 RATE LIMIT CHECK
+                if self.is_rate_limited(self.user.id, self.conversation_id):
+                    await self.send(text_data=json.dumps({
+                        "type": "error",
+                        "message": "Too many messages. Slow down."
+                    }))
+                    return
+                temp_id = data.get("temp_id")
                 message_text = data.get("message")
                 reply_to_id = data.get("reply_to")
 
-                attachments = data.get("attachments", [])
+                message_type = "text"
 
-                if attachments:
-                    file_type = attachments[0].get("file_type")
-
-                    if file_type == "image":
-                        message_type = "image"
-                    elif file_type == "video":
-                        message_type = "video"
-                    else:
-                        message_type = "file"
-                else:
-                    message_type = "text"
-
-                print("💬 New message:", message_text)
-
-                # 🔥 BU O‘ZGARADI
                 message = await self.save_message(message_text, reply_to_id, message_type)
 
-                # 🔥 NOTIFICATION LOGIC
-                participants = await self.get_participants()
+                serialized_message = await database_sync_to_async(
+                    lambda: MessageSerializer(message, context={"request": None}).data
+                )()
+                serialized_message["temp_id"] = temp_id
 
-                attachments_input = data.get("attachments", [])
-
+                # =========================
+                # IMAGE (for notification)
+                # =========================
                 image = None
-                if attachments_input:
-                    if attachments_input[0].get("file_type") == "image":
-                        image = attachments_input[0].get("file_url")
-                for user_id in participants:
+                if serialized_message.get("attachments"):
+                    first = serialized_message["attachments"][0]
+                    if first["file_type"] == "image":
+                        image = first["file_url"]
 
-                    if user_id == self.user.id:
-                        continue
-
-                    active_conversation = ACTIVE_USERS.get(user_id)
-
-                    if active_conversation != int(self.conversation_id):
-
-                        # 🔥 notification text build
-                        notif_type, text = await self.build_notification_data(message)
-
-                        await self.create_notification(user_id, message.id, notif_type, text)
-
-                        await self.channel_layer.group_send(
-                            f"notifications_{user_id}",
-                            {
-                                "type": "send_notification",
-                                "notification_type": notif_type,
-                                "text": text,
-                                "message_id": message.id,
-                                "conversation_id": self.conversation_id,
-                                "sender": self.user.username,
-                                "sender_id": self.user.id,
-                                "image": image,
-                                "conversation_type": "private", 
-                            }
-                        )
-
-                reply_data = None
-                if reply_to_id:
-                    reply_data = await self.get_reply_data(reply_to_id)
-            
+                # =========================
+                # WEBSOCKET MESSAGE
+                # =========================
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
                         "type": "message",
-                        "message": message.content,
-                        "sender": self.user.username,
-                        "sender_id": self.user.id,
-                        "message_id": message.id,
-                        "created_at": str(message.created_at),
-                        "attachments": attachments,  
-                        "reply_to": reply_data,
-                        "status": "sent"
+                        "message": serialized_message
                     }
                 )
 
-                # Send delivered event to other participants
+                import asyncio
+
+                asyncio.create_task(
+                    self.send_notifications_background(message)
+                )
+
+                # =========================
+                # DELIVERED
+                # =========================
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
@@ -349,19 +351,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     # MESSAGE EVENT
     async def message(self, event):
-
-        print("📤 Sending message to client:", event)
-
         await self.send(text_data=json.dumps({
             "type": "message",
-            "message": event.get("message"),
-            "sender": event["sender"],
-            "sender_id": event["sender_id"],
-            "message_id": event["message_id"],
-            "created_at": event["created_at"],
-            "attachments": event.get("attachments", []), 
-            "reply_to": event.get("reply_to"),
-            "status": event.get("status", "sent")
+            "data": event["message"]
         }))
 
     # TYPING EVENT
@@ -437,6 +429,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "reaction": event.get("reaction"),
         }))
     
+    async def file_infected(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "file_infected",
+            "message_id": event["message_id"],
+        }))
+    
     async def online_users_list(self, event):
 
         await self.send(text_data=json.dumps({
@@ -460,7 +458,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             "type": "user_offline",
             "user_id": event["user_id"],
-            "username": event["username"]
+            "username": event["username"],
+            "last_seen": event.get("last_seen") 
         }))
         
     async def message_deleted(self, event):
@@ -468,6 +467,37 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "type": "message_deleted",
             "message_id": event["message_id"]
         }))
+
+    async def send_notifications_background(self, message):
+        participants = await self.get_participants()
+
+        for user_id in participants:
+            if user_id == self.user.id:
+                continue
+
+            active_conversation = ACTIVE_USERS.get(user_id)
+
+            if active_conversation != int(self.conversation_id):
+
+                notif_type, text = await self.build_notification_data(message)
+
+                # 🔥 async qilib yuboramiz
+                await self.channel_layer.group_send(
+                    f"notifications_{user_id}",
+                    {
+                        "type": "send_notification",
+                        "notification_type": notif_type,
+                        "text": text,
+                        "message_id": message.id,
+                        "conversation_id": self.conversation_id,
+                        "sender": self.user.username,
+                        "sender_id": self.user.id,
+                        "conversation_type": "private",
+                    }
+                )
+
+                await self.create_notification(user_id, message.id, notif_type, text)
+
     @database_sync_to_async
     def conversation_exists(self):
         """Check if conversation exists"""
@@ -511,30 +541,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             reply_to=reply_to  
         )
 
-
         print("💾 Message saved:", message.id, "reply_to:", reply_to_id)
         return message
     
-    @database_sync_to_async
-    def get_reply_data(self, message_id):
-        if not message_id:
-            return None
-
-        try:
-            msg = Message.objects.get(
-                id=message_id,
-                conversation_id=self.conversation_id
-            )
-
-            return {
-                "id": msg.id,
-                "content": msg.content if not msg.is_deleted else "Deleted message",
-                "sender": msg.sender.username,
-                "sender_id": msg.sender.id,       
-                "is_deleted": msg.is_deleted     
-            }
-        except Message.DoesNotExist:
-            return None
 
     @database_sync_to_async
     def mark_message_read(self, message_id):
@@ -588,7 +597,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             if msg.is_deleted:
                 return False
-
+            
+            # 🔥 replies fix (optional but recommended)
+            msg.replies.update(reply_to=None)
+        # 🔥 DELETE REACTIONS
+            msg.reactions.all().delete()
             msg.is_deleted = True
             msg.content = ""
             msg.save(update_fields=["is_deleted", "content"])
@@ -601,35 +614,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def update_last_seen(self):
         try:
             user = User.objects.get(id=self.user.id)
-            user.last_seen = timezone.now()
-            user.save(update_fields=["last_seen"])
-            print(f"⏱ Last seen updated for {user.username}")
+
+            presence, _ = UserPresence.objects.get_or_create(user=user)
+
+            presence.last_seen = timezone.now()
+            presence.save(update_fields=["last_seen"])
+
+            print(f"⚫ {user.username} OFFLINE at {presence.last_seen}")
+
         except Exception as e:
             print("❌ Last seen error:", e)
-    
+        
     @database_sync_to_async
     def get_message(self, message_id):
         try:
             return Message.objects.get(id=message_id)
         except Message.DoesNotExist:
             return None
-
-
-    @database_sync_to_async
-    def get_attachments(self, message_id):
-
-        from apps.messaging.models import Attachment
-
-        attachments = Attachment.objects.filter(message_id=message_id)
-
-        return [
-            {
-                "file_url": f"http://127.0.0.1:8000{att.file.url}",
-                "file_type": att.file_type,
-                "file_size": att.file_size
-            }
-            for att in attachments
-        ]
     
     @database_sync_to_async
     def get_participants(self):
@@ -669,3 +670,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         except Exception as e:
             print("❌ Notification error:", e)
+    
+    @database_sync_to_async
+    def set_user_online(self):
+        try:
+            user = User.objects.get(id=self.user.id)
+
+            presence, _ = UserPresence.objects.get_or_create(user=user)
+
+            presence.last_seen = None
+            presence.save(update_fields=["last_seen"])
+
+            print(f"🟢 {user.username} is ONLINE")
+
+        except Exception as e:
+            print("❌ Online error:", e)

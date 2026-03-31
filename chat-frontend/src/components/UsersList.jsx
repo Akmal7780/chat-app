@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import api from "../api/axios";
 import "../styles/chat.css";
 import CreateGroupModal from "./CreateGroupModal";
+import { useOnlineUsers } from "../context/OnlineUsersContext";
 
-function UsersList({ onSelectUser, currentUser, selectedUserId }) {
-  const [users, setUsers] = useState([]);
+function UsersList({ onSelectUser, currentUser, selectedUserId}) {
+  const { onlineUsers, users, setUsers } = useOnlineUsers();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -67,7 +68,7 @@ function UsersList({ onSelectUser, currentUser, selectedUserId }) {
   };
 
   const formatLastSeen = (lastSeen) => {
-    if (!lastSeen) return "Offline";
+    if (!lastSeen) return "Recently";
 
     const now = new Date();
     const lastSeenDate = new Date(lastSeen);
@@ -152,7 +153,7 @@ function UsersList({ onSelectUser, currentUser, selectedUserId }) {
         <div className="empty-state">No users found</div>
       ) : (
         users.map((user, index) => {
-          const online = isOnline(user.last_seen);
+          const online = onlineUsers?.has(Number(user.id));
 
           return (
             <div
@@ -164,13 +165,13 @@ function UsersList({ onSelectUser, currentUser, selectedUserId }) {
               style={{ animationDelay: `${index * 0.1}s` }}
             >
               <div className="avatar-container">
-            {user.avatar ? (
-              <img
-                src={user.avatar}   
-                alt="avatar"
-                className="user-avatar-small"
-              />
-            ) : (
+            {user.avatar_url || user.avatar ? (
+            <img
+              src={user.avatar_url || user.avatar}
+              alt="avatar"
+              className="user-avatar-small"
+            />
+          ) : (
               <div
                 className="user-avatar-small"
                 style={{

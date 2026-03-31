@@ -20,7 +20,7 @@ application = ProtocolTypeRouter({
 
     "websocket": JwtAuthMiddleware(
         URLRouter(
-            messaging_ws + notification_ws   # 🔥 ENG MUHIM JOY
+            messaging_ws + notification_ws   
         )
     ),
 })

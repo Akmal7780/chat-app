@@ -1,8 +1,14 @@
 from django.db import models
 from django.conf import settings
 from apps.conversations.models import Conversation
+import uuid
 
 
+
+
+# =========================
+# MESSAGE MODEL
+# =========================
 class Message(models.Model):
 
     TEXT = "text"
@@ -14,8 +20,6 @@ class Message(models.Model):
         (IMAGE, "Image"),
         (FILE, "File"),
     )
-
-    id = models.BigAutoField(primary_key=True)
 
     conversation = models.ForeignKey(
         Conversation,
@@ -45,25 +49,74 @@ class Message(models.Model):
         related_name="replies"
     )
 
-    attachment_url = models.URLField(
-        blank=True,
-        null=True
-    )
-
     is_edited = models.BooleanField(default=False)
-
     is_deleted = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
-
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Message {self.id} from {self.sender}"
 
-class MessageRead(models.Model):
 
-    id = models.BigAutoField(primary_key=True)
+# =========================
+# ATTACHMENT MODEL 🔥
+# =========================
+class Attachment(models.Model):
+
+    IMAGE = "image"
+    VIDEO = "video"
+    FILE = "file"
+
+    FILE_TYPES = (
+        (IMAGE, "Image"),
+        (VIDEO, "Video"),
+        (FILE, "File"),
+    )
+
+    scan_status = models.CharField(max_length=20, default="pending")
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="attachments"
+    )
+    original_name = models.CharField(max_length=255, blank=True)
+    file = models.CharField(max_length=500)
+
+    file_type = models.CharField(
+        max_length=20,
+        choices=FILE_TYPES
+    )
+
+    file_size = models.PositiveIntegerField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.file_type} for message {self.message.id}"
+
+    @property
+    def file_url(self):
+        from utils.minio import get_s3
+        from django.conf import settings
+
+        s3 = get_s3()
+
+        return s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                "Key": self.file,
+            },
+            ExpiresIn=settings.MINIO_URL_EXPIRY
+        )
+
+
+# =========================
+# READ RECEIPTS
+# =========================
+class MessageRead(models.Model):
 
     message = models.ForeignKey(
         Message,
@@ -86,9 +139,10 @@ class MessageRead(models.Model):
         return f"{self.user} read message {self.message_id}"
 
 
+# =========================
+# TYPING INDICATOR
+# =========================
 class TypingIndicator(models.Model):
-
-    id = models.BigAutoField(primary_key=True)
 
     conversation = models.ForeignKey(
         Conversation,
@@ -111,47 +165,13 @@ class TypingIndicator(models.Model):
         return f"{self.user} typing in {self.conversation}"
 
 
-class Attachment(models.Model):
-
-    IMAGE = "image"
-    VIDEO = "video"
-    FILE = "file"
-
-    FILE_TYPES = (
-        (IMAGE, "Image"),
-        (VIDEO, "Video"),
-        (FILE, "File"),
-    )
-
-    id = models.BigAutoField(primary_key=True)
+# =========================
+# REACTIONS
+# =========================
+class Reaction(models.Model):
 
     message = models.ForeignKey(
         Message,
-        on_delete=models.CASCADE,
-        related_name="attachments"
-    )
-
-    file = models.FileField(
-        upload_to="chat_attachments/",
-        null=True,
-        blank=True
-    )
-
-    file_type = models.CharField(
-        max_length=20,
-        choices=FILE_TYPES
-    )
-
-    file_size = models.IntegerField()
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-class Reaction(models.Model):
-
-    id = models.BigAutoField(primary_key=True)
-
-    message = models.ForeignKey(
-        "messaging.Message",
         on_delete=models.CASCADE,
         related_name="reactions"
     )
