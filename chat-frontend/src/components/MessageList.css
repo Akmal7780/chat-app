@@ -7,11 +7,7 @@
   flex: 1;
   padding: var(--spacing-lg) var(--spacing-md);
   overflow-y: auto;
-<<<<<<< HEAD
-  background-color: var(--bg-obsidian);
-=======
   background: url('/public/bg_image.png');
->>>>>>> main
   position: relative;
   display: flex;
   flex-direction: column;
