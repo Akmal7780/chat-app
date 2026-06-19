@@ -9,8 +9,8 @@ router.register("messages", MessageViewSet, basename="messages")
 urlpatterns = [
     path("", include(router.urls)),
      # 🔥 MinIO multipart upload
-   path("upload/init/", InitUpload.as_view()),      # ← frontend bilan mos    # ← frontend bilan mos
-    path("upload/complete/", CompleteUpload.as_view()), # ← frontend bilan mos
+   path("upload/init/", InitUpload.as_view()),    
+    path("upload/complete/", CompleteUpload.as_view()), 
     path("upload/part-direct/", UploadPartDirect.as_view()),
     path("attachments/<int:pk>/", DeleteAttachment.as_view()),
 ]

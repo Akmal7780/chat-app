@@ -3,7 +3,7 @@ import MessageReactions from "./MessageReactions"
 import api from "../api/axios"
 import "./MessageList.css" // Import the CSS file
 
-function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply }) {
+function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, loading }) {
   const messagesEndRef = useRef(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [previewPDF, setPreviewPDF] = useState(null)
@@ -272,7 +272,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
 
   return (
     <div className="message-list-container">
-      {messages.length === 0 ? (
+      {!loading && messages.length === 0 ? (
         <div className="message-list-empty-state">
           <div className="message-list-empty-icon">💬</div>
           <p className="message-list-empty-text">No messages yet. Start conversation!</p>
