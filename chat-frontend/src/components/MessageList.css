@@ -5,7 +5,7 @@
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  background: #f0f2f5;
+  background: url('/public/bg_image.png');
   position: relative;
   display: flex;
   flex-direction: column;
@@ -299,7 +299,7 @@
   gap: 4px;
   margin-top: 4px;
   font-size: 11px;
-  color: #666;
+  color: #f8f4f4;
 }
 
 .message-list-status-icon {
@@ -312,11 +312,11 @@
 }
 
 .message-list-status-sent {
-  color: #a0a0a0;
+  color: #d6d2d2;
 }
 
 .message-list-status-sending {
-  color: #a0a0a0;
+  color: #e4e0e0;
 }
 
 /* Hint indicator */
@@ -674,12 +674,12 @@
   }
   
   .message-list-footer {
-    color: #a0aec0;
+    color: #fdfdfd;
   }
   
   .message-list-hint-indicator {
     background: rgba(255,255,255,0.1);
-    color: #cbd5e0;
+    color: #fafbfc;
   }
   
   .message-list-emoji-bar {

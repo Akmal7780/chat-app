@@ -3,6 +3,8 @@ version: "3.9"
 services:
   backend:
     build: .
+    image: chat_app:latest
+
     command: >
       sh -c "
         sleep 5 &&
@@ -11,89 +13,126 @@ services:
         python manage.py createadmin &&
         python -m daphne -b 0.0.0.0 -p 8000 config.asgi:application
       "
+
     volumes:
       - .:/app
+
     ports:
-      - "8000:8000"
+      - "8004:8000"
+
     env_file:
       - .env
+
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+
     depends_on:
       - redis
       - db
       - minio
       - clamav
+
     restart: unless-stopped
 
   celery:
-    build: .
+    image: chat_app:latest
+
     command: celery -A config worker -l info -P solo
+
     volumes:
       - .:/app
+
     env_file:
       - .env
+
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+
     depends_on:
       - redis
       - db
       - minio
       - clamav
+
     restart: unless-stopped
 
   frontend:
     image: node:20
+
     working_dir: /app
+
     command: sh -c "npm install && npm run dev -- --host"
+
     volumes:
-      - D:\Projects\chat-app\chat-frontend:/app
+      - D:/Projects/chat-app/chat-frontend:/app
+
     ports:
-      - "5173:5173"
+      - "5177:5173"
+
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
     restart: unless-stopped
 
   redis:
     image: redis:7
+
     ports:
-      - "6379:6379"
+      - "6383:6379"
+
     volumes:
       - redis_data:/data
+
     restart: unless-stopped
 
   db:
     image: postgres:15
+
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+
     ports:
-      - "5432:5432"
+      - "5436:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     restart: unless-stopped
 
   minio:
     image: minio/minio
+
     command: server /data --console-address ":9001"
+
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9004:9000"
+      - "9005:9001"
+
     volumes:
       - minio_data:/data
+
     restart: unless-stopped
 
   clamav:
     image: clamav/clamav:latest
-    container_name: clamav
+
+    container_name: chat_clamav
+
     ports:
-      - "3310:3310"
+      - "3314:3310"
+
     volumes:
       - clamav_data:/var/lib/clamav
+
     environment:
       - CLAMAV_NO_FRESHCLAMD=false
+
     restart: unless-stopped
 
 volumes:

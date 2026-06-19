@@ -739,12 +739,12 @@ setLoading(true)
 
   return (
     <div className="chat-container">
-      {loading && (
+      {/* {loading && (
       <div className="overlay-loading">
         <div className="loading-spinner"></div>
         <p>Loading chat...</p>
       </div>
-    )}
+    )} */}
 
   {/* Chat Header */}
   <div className="chat-header">
@@ -789,7 +789,7 @@ setLoading(true)
           </div>
         )}
 
-        {/* Online indicator only for private chat */}
+        {/* Online indicator faqat private chat uchun */}
         {selectedUser.type !== "group" && (
           <span
             className={`online-dot ${
@@ -840,7 +840,7 @@ setLoading(true)
     </>
   )}
 
-  {/* MODERN SEARCH BAR */}
+  {/* MODERN SEARCH BAR - O'ng tomonda */}
   <div className="search-wrapper">
     <div className={`search-container ${search ? 'has-value' : ''}`}>
       <span className="search-icon">🔍</span>

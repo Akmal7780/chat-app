@@ -111,12 +111,12 @@ function UsersList({ onSelectUser, currentUser, selectedUserId}) {
 
   return (
     <div className="users-list-container">
-      <button
+      {/* <button
         className="create-group-btn"
         onClick={() => setShowGroupModal(true)}
       >
         + Create Group
-      </button>
+      </button> */}
 
       {/* GROUPS */}
       <div className="users-header">

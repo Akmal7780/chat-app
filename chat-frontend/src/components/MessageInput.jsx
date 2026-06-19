@@ -477,12 +477,12 @@ const handleFileUpload = async (file) => {
   </div>
 )}
       {/* Connection status */}
-      {!isConnected && (
+      {/* {!isConnected && (
         <div className="connection-status">
           <span className="status-dot"></span>
           <span>Reconnecting...</span>
         </div>
-      )}
+      )} */}
     </div>
   )
 }

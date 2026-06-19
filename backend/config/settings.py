@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     'apps.conversations',
     'apps.messaging',
     'apps.notifications', 
+    'apps.ai',
 
     'rest_framework.authtoken',
 
@@ -159,7 +160,7 @@ REST_FRAMEWORK = {
         "user": "100/minute",
         "anon": "20/minute",
 
-        "message": "5/second",
+        "message": "2/second",
         "login": "5/minute",
         "upload": "100/minute",
     },
@@ -315,3 +316,5 @@ MINIO_URL_EXPIRY = 300
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 PUBLIC_MINIO_URL = "http://localhost:9000"
+
+DEEPSEEK_API_KEY = env("DEEPSEEK_API_KEY")

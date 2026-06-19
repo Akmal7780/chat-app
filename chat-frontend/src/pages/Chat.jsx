@@ -2,7 +2,9 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import UsersList from "../components/UsersList"
 import ChatContainer from "../components/ChatContainer"
+import api from "../api/axios";
 import ProfileEdit from "../components/ProfileEdit"
+import CreateGroupModal from "../components/CreateGroupModal";
 import "../styles/chat.css"
 
 function Chat() {
@@ -12,8 +14,33 @@ function Chat() {
   const [initialLoad, setInitialLoad] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [showGroupModal, setShowGroupModal] = useState(false)
+  const [users, setUsers] = useState([])
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
 
   const navigate = useNavigate()
+
+  useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      const res = await api.get("/users/users_list/")
+      const data = res.data.results || res.data
+
+      const otherUsers = data.filter(
+        (user) => user.id !== currentUser?.id
+      )
+
+      setUsers(otherUsers)
+    } catch (err) {
+      console.log("Users fetch error:", err)
+    }
+  }
+
+  if (currentUser) {
+    fetchUsers()
+  }
+}, [currentUser])
 
   useEffect(() => {
     const loadUser = () => {
@@ -50,6 +77,10 @@ function Chat() {
     localStorage.clear()
     navigate("/")
   }
+  const handleCreateGroup = () => {
+  setShowGroupModal(true)
+  setShowMenu(false)
+}
 
   if (loading || initialLoad) {
     return (
@@ -117,13 +148,37 @@ function Chat() {
               <small>{currentUser?.email}</small>
             </div>
           </div>
+           <div
+    className="settings-icon"
+    onClick={(e) => {
+      e.stopPropagation()
+      setShowMenu(!showMenu)  // Toggle qilish yaxshiroq
+      setMenuPos({
+        x: e.clientX,
+        y: e.clientY
+      })
+    }}
+  >
+    ⋮
+  </div>
 
-          {/* LOGOUT */}
-          <button onClick={handleLogout} className="logout-btn">
-            <span className="logout-icon">⏻</span>
-            <span>Logout</span>
-          </button>
         </div>
+
+        {/* MENUNI user-info DAN TASHQARIGA OLIB CHIQING */}
+{showMenu && (
+  <div 
+    className="settings-menu"
+    style={{
+      position: 'fixed',
+      top: menuPos.y + 10,
+      left: menuPos.x - 150,
+      zIndex: 9999
+    }}
+  >
+    <div onClick={handleCreateGroup}>+ Create Group</div>
+    <div onClick={handleLogout}>Logout</div>
+  </div>
+)}
 
         {/* USERS LIST */}
         <UsersList
@@ -175,6 +230,15 @@ function Chat() {
       localStorage.setItem("user", JSON.stringify(cleanUser))
     }}
   />
+)}
+
+
+{showGroupModal && (
+  <CreateGroupModal
+  users={users}
+  onClose={() => setShowGroupModal(false)}
+  onCreated={() => setShowGroupModal(false)}
+/>
 )}
 
     </div>
