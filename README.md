@@ -270,7 +270,7 @@ VITE_TURN_PASSWORD=your_turn_password
 ### 🔐 Login Page
 
 <p align="center">
-  <img src="./screenshots/login.jpg" width="700"/>
+  <img src="./screenshots/login.png" width="700"/>
 </p>
 
 ---
@@ -278,7 +278,7 @@ VITE_TURN_PASSWORD=your_turn_password
 ### 🏠 Chat Dashboard
 
 <p align="center">
-  <img src="./screenshots/chat-dashboard.jpg" width="700"/>
+  <img src="./screenshots/chat-dashboard.png" width="700"/>
 </p>
 
 ---
@@ -286,7 +286,7 @@ VITE_TURN_PASSWORD=your_turn_password
 ### 💬 Private Chat
 
 <p align="center">
-  <img src="./screenshots/private-chat.jpg" width="700"/>
+  <img src="./screenshots/private-chat.png" width="700"/>
 </p>
 
 ---
@@ -294,7 +294,15 @@ VITE_TURN_PASSWORD=your_turn_password
 ### 👥 Group Chat
 
 <p align="center">
-  <img src="./screenshots/group-chat.jpg" width="700"/>
+  <img src="./screenshots/group-chat.png" width="700"/>
+</p>
+
+---
+
+### 💬 Rich Messaging & Menu
+
+<p align="center">
+  <img src="./screenshots/chat-features.jpg" width="700"/>
 </p>
 
 ---

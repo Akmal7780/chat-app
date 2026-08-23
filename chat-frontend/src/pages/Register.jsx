@@ -51,9 +51,26 @@ function Register() {
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div className="auth-brand">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M10,2 H18 A3,3 0 0 1 21,5 V9 A3,3 0 0 1 18,12 H13 L11,15 L10,12 A3,3 0 0 1 7,9 V5 A3,3 0 0 1 10,2 Z"
+              stroke="#fff"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M6,9 H14 A3,3 0 0 1 17,12 V16 A3,3 0 0 1 14,19 H9 L7,22 L6,19 A3,3 0 0 1 3,16 V12 A3,3 0 0 1 6,9 Z"
+              fill="#4F46E5"
+              stroke="#fff"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
         <div className="auth-header">
           <h2 className="auth-title">Create Account</h2>
-          <p className="auth-subtitle">Sign up to start chatting</p>
+          <p className="auth-subtitle">Sign up to start chatting on Nexus Chat</p>
         </div>
 
         <div className="auth-form">
@@ -101,12 +118,21 @@ function Register() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <button 
+              <button
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowPassword(!showPassword)}
               >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
+                {showPassword ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.24 4.24M9.9 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s1.4 2.9 4.1 4.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+                  </svg>
+                )}
               </button>
             </div>
           </div>
@@ -124,12 +150,21 @@ function Register() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
-              <button 
+              <button
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               >
-                {showConfirmPassword ? "👁️" : "👁️‍🗨️"}
+                {showConfirmPassword ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.24 4.24M9.9 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s1.4 2.9 4.1 4.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+                  </svg>
+                )}
               </button>
             </div>
           </div>

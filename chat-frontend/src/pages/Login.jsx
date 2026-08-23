@@ -162,7 +162,11 @@ function Login() {
       <div className="auth-container">
         <div className="auth-card">
           <div className="auth-header">
-            <div className="auth-2fa-icon">🔒</div>
+            <div className="auth-2fa-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 17V15M8 11V8C8 5.79086 9.79086 4 12 4C14.2091 4 16 5.79086 16 8V11M6 21H18C19.1046 21 20 20.1046 20 19V13C20 11.8954 19.1046 11 18 11H6C4.89543 11 4 11.8954 4 13V19C4 20.1046 4.89543 21 6 21Z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </div>
             <h2 className="auth-title">Two-Step Verification</h2>
             <p className="auth-subtitle">Enter the additional password you set for your account.</p>
           </div>
@@ -212,9 +216,26 @@ function Login() {
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div className="auth-brand">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M10,2 H18 A3,3 0 0 1 21,5 V9 A3,3 0 0 1 18,12 H13 L11,15 L10,12 A3,3 0 0 1 7,9 V5 A3,3 0 0 1 10,2 Z"
+              stroke="#fff"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M6,9 H14 A3,3 0 0 1 17,12 V16 A3,3 0 0 1 14,19 H9 L7,22 L6,19 A3,3 0 0 1 3,16 V12 A3,3 0 0 1 6,9 Z"
+              fill="#4F46E5"
+              stroke="#fff"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
         <div className="auth-header">
           <h2 className="auth-title">Welcome Back</h2>
-          <p className="auth-subtitle">Sign in to continue to Chat App</p>
+          <p className="auth-subtitle">Sign in to continue to Nexus Chat</p>
         </div>
 
         <div className="auth-form">
@@ -281,13 +302,22 @@ function Login() {
       onChange={(e) => setPassword(e.target.value)}
     />
 
-    {/* 👁️ TOGGLE */}
+    {/* TOGGLE */}
     <button
       type="button"
       className="password-toggle"
       onClick={() => setShowPassword(!showPassword)}
     >
-      {showPassword ? "👁️" : "👁️‍🗨️"}
+      {showPassword ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M3 3l18 18M10.6 10.6a3 3 0 0 0 4.24 4.24M9.9 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-3.1 3.9M6.2 6.2C3.5 8 2 12 2 12s1.4 2.9 4.1 4.9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      )}
     </button>
   </div>
 </div>
@@ -305,12 +335,18 @@ function Login() {
             <span>or continue with</span>
           </div>
 
-          {/* 🔥 GOOGLE BUTTON */}
-          <button 
+          {/* GOOGLE BUTTON */}
+          <button
             className="auth-button"
             onClick={() => googleLogin()}
             disabled={loading}
           >
+            <svg width="18" height="18" viewBox="0 0 48 48">
+              <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.9 3 4 11.9 4 23s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/>
+              <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 16 19 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 16.3 3 9.6 7.3 6.3 14.7z"/>
+              <path fill="#4CAF50" d="M24 43c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 34.6 26.7 35.5 24 35.5c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 43 24 43z"/>
+              <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.4-2.4 4.4-4.5 5.9l6.2 5.2C40.9 36.4 44 30.7 44 24c0-1.3-.1-2.7-.4-3.5z"/>
+            </svg>
             Continue with Google
           </button>
 
