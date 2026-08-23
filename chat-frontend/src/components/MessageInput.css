@@ -1,117 +1,357 @@
-/* MessageInput.css - Obsidian Flux Theme Message Input Composer */
+/* MessageInput.css - Modern Obsidian Flux Theme Message Input Composer */
 
 /* ==========================================================================
-   1. Bottom Composer Container (Glassmorphic)
+   1. Bottom Composer Container (Ultra-Modern Glassmorphic)
    ========================================================================== */
 .message-input-container {
-  background: rgba(30, 41, 59, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--bg-obsidian-surface);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
   border-top: 1px solid var(--border-obsidian);
-  padding: 12px 20px;
+  padding: 14px 24px 16px;
   position: relative;
   z-index: 38;
-  transition: var(--transition);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .message-input-container.dragging {
-  background: rgba(99, 102, 241, 0.1);
-  border-top-color: var(--indigo-accent);
+  background: rgba(99, 102, 241, 0.15);
+  border-top-color: var(--indigo-accent, #818cf8);
+  box-shadow: inset 0 0 40px rgba(99, 102, 241, 0.05);
 }
 
 /* ==========================================================================
-   2. Input Area Layout (Pill-Shaped Composer)
+   2. Input Area Layout (Modern Pill Composer with Gradient Border)
    ========================================================================== */
 .input-area {
   width: 100%;
-  max-width: var(--thread-max-width);
+  max-width: var(--thread-max-width, 860px);
   margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background-color: var(--bg-obsidian-surface);
-  border: 1px solid var(--border-obsidian);
-  border-radius: var(--radius-full);
-  padding: 6px 12px;
-  box-shadow: var(--shadow-md);
-  transition: var(--transition);
+  gap: 6px;
+  background: var(--bg-obsidian);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid var(--border-obsidian);
+  border-radius: 60px;
+  padding: 4px 6px 4px 16px;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.input-area::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 60px;
+  padding: 1.5px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.input-area:focus-within::before {
+  opacity: 1;
 }
 
 .input-area:focus-within {
-  border-color: var(--indigo-accent);
-  box-shadow: 0 0 0 1px var(--indigo-accent), var(--shadow-hover);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgba(51, 144, 236, 0.3),
+    0 8px 40px rgba(51, 144, 236, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  background: var(--bg-obsidian-card);
+  transform: translateY(-1px);
 }
 
-/* Action Buttons (Attachment / Emoji / Voice) */
-.action-button, .voice-button {
+/* ==========================================================================
+   3. AI Suggestions - Modern Chips with Gradient
+   ========================================================================== */
+.ai-suggestions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 0 4px;
+  animation: slideDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.suggestion-chip {
+  border: none;
+  cursor: pointer;
+  padding: 8px 18px;
+  border-radius: 40px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.08));
+  color: var(--on-surface, #e2e8f0);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestion-chip:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.18));
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+}
+
+.suggestion-chip:active {
+  transform: scale(0.96);
+}
+
+.ai-loading {
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-loading::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(99, 102, 241, 0.2);
+  border-top-color: var(--indigo-accent, #818cf8);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   4. AI Menu - Modern Floating Panel
+   ========================================================================== */
+.ai-menu {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 230px;
+  background: var(--bg-obsidian-card);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--border-obsidian);
+  border-radius: 16px;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(99, 102, 241, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 999;
+  animation: slideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ai-menu-item {
+  border: none;
+  background: transparent;
+  padding: 14px 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--on-surface, #e2e8f0);
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-obsidian-light);
+}
+
+.ai-menu-item:last-child {
+  border-bottom: none;
+}
+
+.ai-menu-item:hover {
+  background: var(--border-obsidian-light);
+  padding-left: 24px;
+  color: var(--indigo-accent);
+}
+
+.ai-menu-item:active {
+  background: var(--border-obsidian-light);
+  transform: scale(0.98);
+}
+
+/* ==========================================================================
+   5. Action Buttons - Modern Minimal
+   ========================================================================== */
+.action-button,
+.voice-button {
   background: transparent;
   border: none;
-  color: var(--on-surface-variant);
+  color: var(--on-surface-variant, #94a3b8);
   cursor: pointer;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: var(--transition);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
+  position: relative;
 }
 
-.action-button:hover, .voice-button:hover {
-  color: var(--indigo-accent);
-  background: rgba(255, 255, 255, 0.05);
+.action-button::after,
+.voice-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(99, 102, 241, 0.15), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
-.action-button:disabled, .voice-button:disabled {
-  opacity: 0.35;
+.action-button:hover::after,
+.voice-button:hover::after {
+  opacity: 1;
+}
+
+.action-button:hover,
+.voice-button:hover {
+  color: var(--indigo-accent, #818cf8);
+  transform: translateY(-1px);
+}
+
+.action-button:active,
+.voice-button:active {
+  transform: scale(0.92);
+}
+
+.action-button:disabled,
+.voice-button:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
+  transform: none !important;
 }
 
-.action-button svg, .voice-button svg {
+.action-button svg,
+.voice-button svg {
   width: 20px;
   height: 20px;
   stroke: currentColor;
+  transition: transform 0.2s ease;
 }
 
-/* Voice Button recording glow */
+.action-button:hover svg {
+  transform: scale(1.1);
+}
+
+/* Voice Button Recording State */
 .voice-button.recording {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-  animation: voiceGlow 1.5s ease-in-out infinite;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+  animation: voicePulse 1.2s ease-in-out infinite;
 }
 
-@keyframes voiceGlow {
-  0%, 100% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.3); }
-  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.1); }
+@keyframes voicePulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.25);
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 0 0 8px rgba(248, 113, 113, 0.05);
+    transform: scale(1.05);
+  }
 }
 
-/* Text Area Composer wrapper */
+/* ==========================================================================
+   6. Text Area - Clean & Modern
+   ========================================================================== */
 .text-input-wrapper {
   flex: 1;
   display: flex;
   align-items: center;
   position: relative;
+  min-height: 44px;
+}
+
+.recording-indicator {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f87171;
+  animation: voicePulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.recording-time {
+  font-size: 14px;
+  color: var(--on-surface-variant, #94a3b8);
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-cancel {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--on-surface-variant, #94a3b8);
+  cursor: pointer;
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.recording-cancel:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
 }
 
 .message-textarea {
   flex: 1;
   background: transparent;
   border: none;
-  color: var(--on-surface);
-  font-size: 14px;
-  padding: 8px 4px;
+  color: var(--on-surface, #e2e8f0);
+  font-size: 15px;
+  padding: 10px 6px;
   outline: none;
   font-family: inherit;
   resize: none;
-  max-height: 120px;
-  line-height: 1.5;
+  max-height: 140px;
+  line-height: 1.6;
   scrollbar-width: none;
+  min-height: 44px;
+  letter-spacing: 0.01em;
+}
+
+.message-textarea::-webkit-scrollbar {
+  display: none;
 }
 
 .message-textarea::placeholder {
-  color: var(--text-muted);
-  opacity: 0.55;
+  color: var(--text-muted, #64748b);
+  opacity: 0.6;
+  font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .message-textarea:focus {
@@ -119,113 +359,146 @@
   box-shadow: none;
 }
 
-/* Circular Send Button */
+/* ==========================================================================
+   7. Send Button - Gradient with Glow
+   ========================================================================== */
 .send-button {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  background: var(--indigo-accent);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--primary-gradient);
   color: white;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
   padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.send-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #818cf8, #a78bfa);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.send-button:hover:not(:disabled)::before {
+  opacity: 1;
 }
 
 .send-button:hover:not(:disabled) {
-  background: #4f46e5;
-  transform: scale(1.05);
+  transform: scale(1.06) translateY(-2px);
+  box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4);
 }
 
 .send-button:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.send-button.disabled, .send-button:disabled {
-  opacity: 0.35;
-  background-color: var(--border-obsidian);
-  color: var(--text-muted);
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
+  transform: scale(0.94);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 .send-button svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
   transform: translateX(1px);
+  position: relative;
+  z-index: 1;
+}
+
+.send-button.disabled,
+.send-button:disabled {
+  opacity: 0.3;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, #64748b);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none !important;
+}
+
+.send-button.disabled::before,
+.send-button:disabled::before {
+  display: none;
 }
 
 /* ==========================================================================
-   3. Telegram-style Reply Preview Card
+   8. Reply Preview - Refined
    ========================================================================== */
 .reply-preview {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: rgba(99, 102, 241, 0.08);
-  border-left: 3px solid var(--indigo-accent);
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  margin-bottom: 12px;
-  max-width: var(--thread-max-width);
+  background: rgba(99, 102, 241, 0.06);
+  border-left: 3px solid var(--indigo-accent, #818cf8);
+  padding: 10px 16px 10px 18px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  max-width: var(--thread-max-width, 860px);
   margin-left: auto;
   margin-right: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.02);
-  border-right: 1px solid rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(99, 102, 241, 0.08);
+  backdrop-filter: blur(8px);
+  animation: slideDown 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .reply-content {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  gap: 2px;
+  gap: 3px;
+  flex: 1;
 }
 
 .reply-content strong {
   font-size: 11px;
-  color: var(--indigo-accent);
+  color: var(--indigo-accent, #818cf8);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  font-weight: 700;
 }
 
 .reply-content span {
-  font-size: 12.5px;
-  color: var(--on-surface-variant);
+  font-size: 13px;
+  color: var(--on-surface-variant, #cbd5e1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 400px;
+  font-weight: 400;
 }
 
 .reply-cancel {
   border: none;
   background: transparent;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
-  color: var(--text-muted);
-  transition: var(--transition);
-  padding: 4px;
+  color: var(--text-muted, #94a3b8);
+  transition: all 0.2s ease;
+  padding: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-full);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
 }
 
 .reply-cancel:hover {
-  color: var(--on-surface);
-  background: rgba(255, 255, 255, 0.05);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  transform: rotate(90deg);
 }
 
 /* ==========================================================================
-   4. Drag and Drop Overlay
+   9. Drag & Drop Overlay - Sleek
    ========================================================================== */
 .drag-overlay {
   position: absolute;
@@ -233,63 +506,68 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(99, 102, 241, 0.9);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(99, 102, 241, 0.85);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
-  border-radius: var(--radius-md);
-  animation: fadeIn 0.2s ease-out;
+  border-radius: var(--radius-md, 12px);
+  animation: fadeIn 0.25s ease-out;
 }
 
 .drag-content {
   text-align: center;
   color: white;
+  transform: scale(0.95);
+  animation: scaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .drag-icon {
-  font-size: 44px;
+  font-size: 52px;
   display: block;
-  margin-bottom: 12px;
-  animation: dragBounce 1s infinite alternate;
+  margin-bottom: 16px;
+  animation: dragBounce 1.2s ease-in-out infinite alternate;
 }
 
 @keyframes dragBounce {
-  from { transform: translateY(0); }
-  to { transform: translateY(-8px); }
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-10px) scale(1.05); }
 }
 
 .drag-content span {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 /* ==========================================================================
-   5. File Upload Previews list
+   10. File Preview - Clean Cards
    ========================================================================== */
 .file-preview {
-  background-color: var(--bg-obsidian-surface);
+  background: var(--bg-obsidian);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--border-obsidian);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   padding: 10px 14px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-width: var(--thread-max-width);
+  max-width: var(--thread-max-width, 860px);
   margin-left: auto;
   margin-right: auto;
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideDown 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  gap: 12px;
 }
 
 .image-preview {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--border-obsidian);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
@@ -300,31 +578,30 @@
 }
 
 .file-preview-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-obsidian);
-  border: 1px solid var(--border-obsidian);
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 22px;
   flex-shrink: 0;
 }
 
 .file-preview-info {
   flex: 1;
   min-width: 0;
-  margin: 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .file-preview-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--on-surface);
+  color: var(--on-surface, #e2e8f0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -332,26 +609,30 @@
 
 .file-preview-size {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-muted, #94a3b8);
+  font-weight: 400;
 }
 
 .file-preview-cancel {
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-muted, #94a3b8);
   font-size: 14px;
-  transition: var(--transition);
-  padding: 4px;
-  border-radius: var(--radius-full);
+  transition: all 0.2s ease;
+  padding: 6px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 34px;
+  height: 34px;
 }
 
 .file-preview-cancel:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  transform: rotate(90deg) scale(1.05);
 }
 
 .file-preview-cancel svg {
@@ -360,47 +641,116 @@
   stroke: currentColor;
 }
 
-/* Emoji Picker Dropup positioning */
+/* ==========================================================================
+   11. Emoji Picker - Modern Dropup
+   ========================================================================== */
 .emoji-picker {
   position: absolute;
-  bottom: 100%;
+  bottom: calc(100% + 12px);
   left: 20px;
-  margin-bottom: 8px;
   z-index: 1000;
-  box-shadow: var(--shadow-lg);
-  border-radius: var(--radius-lg);
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(99, 102, 241, 0.05);
+  border-radius: 16px;
   overflow: hidden;
-  border: 1px solid var(--border-obsidian);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: scaleIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Connection Reconnecting indicator */
+/* ==========================================================================
+   12. Connection Status - Minimal
+   ========================================================================== */
 .connection-status {
   position: absolute;
-  top: -28px;
+  top: -30px;
   left: 50%;
   transform: translateX(-50%);
-  background-color: var(--bg-obsidian-card);
-  border: 1px solid var(--border-obsidian);
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 4px 16px;
+  border-radius: 40px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-muted, #94a3b8);
   display: flex;
   align-items: center;
-  gap: 6px;
-  box-shadow: var(--shadow-sm);
+  gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.04em;
 }
 
 .connection-status .status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background-color: var(--status-away);
-  animation: blink 1s infinite alternate;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: blink 1s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   13. Animations
+   ========================================================================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { 
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes scaleIn {
+  from { 
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to { 
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes blink {
-  from { opacity: 0.3; }
-  to { opacity: 1; }
+  from { opacity: 0.3; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ==========================================================================
+   14. Scrollbar Styling (Optional)
+   ========================================================================== */
+.message-input-container ::-webkit-scrollbar {
+  width: 4px;
+}
+
+.message-input-container ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-input-container ::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 4px;
+}
+
+.message-input-container ::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
 }

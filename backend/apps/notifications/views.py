@@ -3,9 +3,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-from apps.conversations.models import ConversationParticipant
 
 from .models import Notification
 
@@ -116,47 +113,3 @@ def delete_notification(request, notification_id):
             {"error": "Notification not found"},
             status=status.HTTP_404_NOT_FOUND
         )
-
-def send_message_notification(message):
-        channel_layer = get_channel_layer()
-        sender = message.sender
-        conversation = message.conversation
-
-        participants = ConversationParticipant.objects.filter(
-            conversation=conversation
-        ).exclude(user=sender).values_list("user_id", flat=True)
-
-        if message.message_type == "image":
-            notif_type = "image"
-            text = f"{sender.username} sent a photo 📷"
-        elif message.message_type == "video":
-            notif_type = "video"
-            text = f"{sender.username} sent a video 🎥"
-        elif message.message_type == "file":
-            notif_type = "file"
-            text = f"{sender.username} sent a file 📎"
-        else:
-            notif_type = "message"
-            text = f"{sender.username}: {message.content}"
-
-        for user_id in participants:
-            Notification.objects.create(
-                user_id=user_id,
-                message=message,
-                type=notif_type,
-                text=text
-            )
-
-            async_to_sync(channel_layer.group_send)(
-                f"notifications_{user_id}",
-                {
-                    "type": "send_notification",
-                    "notification_type": notif_type,
-                    "text": text,
-                    "message_id": message.id,
-                    "conversation_id": str(conversation.id),
-                    "sender": sender.username,
-                    "sender_id": sender.id,          
-                    "conversation_type": conversation.type, 
-                }
-            )

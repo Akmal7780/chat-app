@@ -147,7 +147,7 @@ from datetime import timedelta
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.users.authentication.SessionAwareJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -276,12 +276,18 @@ REST_AUTH = {
 }
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5177",
+    "http://127.0.0.1:5177",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5177",
+    "http://127.0.0.1:5177",
 ]
 
 #minio
@@ -315,6 +321,13 @@ MINIO_URL_EXPIRY = 300
 # Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
-PUBLIC_MINIO_URL = "http://localhost:9000"
+
+CELERY_BEAT_SCHEDULE = {
+    "auto-delete-expired-messages": {
+        "task": "apps.messaging.tasks.auto_delete_expired_messages",
+        "schedule": 300.0,  # every 5 minutes
+    },
+}
+PUBLIC_MINIO_URL = "http://localhost:9004"
 
 DEEPSEEK_API_KEY = env("DEEPSEEK_API_KEY")

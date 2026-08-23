@@ -9,23 +9,38 @@ function MessageInput({
   isConnected,
   onTyping,
   conversation,
+  messages,
   onFileUploaded,
   currentUser,
-  replyMessage,        
-  onCancelReply        
+  replyMessage,
+  onCancelReply
 }) {
   const [message, setMessage] = useState("")
   const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
-  
+  const mediaRecorderRef = useRef(null)
+  const recordedChunksRef = useRef([])
+  const recordingTimerRef = useRef(null)
+  const recordingStreamRef = useRef(null)
+  const discardRecordingRef = useRef(false)
+
   const [filePreview, setFilePreview] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const emojiPickerRef = useRef(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  
+  const aiMenuRef = useRef(null)
+  const aiButtonRef = useRef(null)
+
   const fileInputRef = useRef(null)
   const textareaRef = useRef(null)
   const dropZoneRef = useRef(null)
+
+  const [suggestions, setSuggestions] = useState([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [showAiMenu, setShowAiMenu] = useState(false)
+  const [loadingAi, setLoadingAi] = useState(false)
+  const suggestionsRequestRef = useRef(0)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -36,12 +51,33 @@ function MessageInput({
   }, [message])
 
   useEffect(() => {
+  const timer = setTimeout(() => {
+    if (message.trim().length > 5) {
+      getSuggestions()
+    } else {
+      setSuggestions([])
+    }
+  }, 1000)
+
+  return () => clearTimeout(timer)
+}, [message])
+
+  useEffect(() => {
   const handleClickOutside = (event) => {
     if (
       emojiPickerRef.current &&
       !emojiPickerRef.current.contains(event.target)
     ) {
       setShowEmojiPicker(false)
+    }
+
+    if (
+      aiMenuRef.current &&
+      !aiMenuRef.current.contains(event.target) &&
+      aiButtonRef.current &&
+      !aiButtonRef.current.contains(event.target)
+    ) {
+      setShowAiMenu(false)
     }
   }
 
@@ -59,6 +95,42 @@ useEffect(() => {
 }
   }
 }, [filePreview])
+
+const getSuggestions = async () => {
+  const history = (messages || [])
+    .filter(m => !m.is_deleted && m.content?.trim())
+    .slice(-10)
+    .map(m =>
+      `${m.sender_id === currentUser?.id ? "Me" : (m.sender_username || m.sender || "Them")}: ${m.content}`
+    )
+
+  if (history.length === 0) {
+    setSuggestions([])
+    return
+  }
+
+  const requestId = ++suggestionsRequestRef.current
+
+  try {
+    setLoadingSuggestions(true)
+
+    const res = await api.post("/ai/suggest-reply/", {
+      messages: history
+    })
+
+    if (requestId !== suggestionsRequestRef.current) return
+
+    setSuggestions([res.data.suggestion])
+
+  } catch (error) {
+    if (requestId !== suggestionsRequestRef.current) return
+    console.error("AI suggestion error:", error)
+  } finally {
+    if (requestId === suggestionsRequestRef.current) {
+      setLoadingSuggestions(false)
+    }
+  }
+}
 
   const handleChange = (e) => {
     const value = e.target.value
@@ -109,10 +181,11 @@ setFilePreview(URL.createObjectURL(file))
 
   const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
 
-const handleFileUpload = async (file) => {
+const handleFileUpload = async (file, { messageType } = {}) => {
   const preview = URL.createObjectURL(file)
   const tempId = "temp_" + Date.now() + "_" + Math.random()
   const isImage = file.type.startsWith("image")
+  const attachmentType = messageType || (isImage ? "image" : "file")
 
   const uploadedMap = {} // 🔥 safe progress
 
@@ -124,7 +197,7 @@ const handleFileUpload = async (file) => {
     attachments: [
       {
         file_url: preview,
-        file_type: isImage ? "image" : "file",
+        file_type: attachmentType,
         original_name: file.name,
         file_size: file.size
       }
@@ -217,7 +290,8 @@ const handleFileUpload = async (file) => {
       parts,
       conversation_id: conversation.id,
       file_name: file.name,
-      size: file.size
+      size: file.size,
+      ...(messageType ? { message_type: messageType } : {})
     })
 
     // 🔥 TEMP REMOVE
@@ -291,13 +365,74 @@ const handleFileUpload = async (file) => {
     }
   }
 
-  // Voice recording (mock)
-  const toggleRecording = () => {
-    setIsRecording(!isRecording)
-    if (!isRecording) {
-      // Start recording logic here
-      setTimeout(() => setIsRecording(false), 5000) // Auto-stop after 5s
+  // Voice message recording
+  const startRecording = async () => {
+    if (!conversation || isRecording) return
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recordingStreamRef.current = stream
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : ""
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = recorder
+      recordedChunksRef.current = []
+      discardRecordingRef.current = false
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data)
+      }
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        recordingStreamRef.current = null
+
+        const wasDiscarded = discardRecordingRef.current
+        const chunks = recordedChunksRef.current
+        recordedChunksRef.current = []
+
+        if (!wasDiscarded && chunks.length > 0) {
+          const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" })
+          const ext = (recorder.mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm"
+          const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: blob.type })
+          handleFileUpload(file, { messageType: "voice" })
+        }
+      }
+
+      recorder.start()
+      setIsRecording(true)
+      setRecordingSeconds(0)
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((s) => s + 1)
+      }, 1000)
+    } catch (err) {
+      console.error("Microphone permission error:", err)
     }
+  }
+
+  const stopRecording = (discard = false) => {
+    if (!mediaRecorderRef.current || !isRecording) return
+
+    discardRecordingRef.current = discard
+    mediaRecorderRef.current.stop()
+    setIsRecording(false)
+    clearInterval(recordingTimerRef.current)
+    recordingTimerRef.current = null
+  }
+
+  useEffect(() => {
+    return () => {
+      clearInterval(recordingTimerRef.current)
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
+
+  const formatRecordingTime = (totalSeconds) => {
+    const m = Math.floor(totalSeconds / 60)
+    const s = totalSeconds % 60
+    return `${m}:${s.toString().padStart(2, "0")}`
   }
 
   // Emoji picker 
@@ -306,6 +441,48 @@ const handleFileUpload = async (file) => {
   textareaRef.current?.focus()
   setShowEmojiPicker(false)
 }
+
+const runAiAction = async (endpoint, payload, resultField, label) => {
+  if (!message.trim()) return
+
+  try {
+    setLoadingAi(true)
+
+    const res = await api.post(endpoint, payload)
+
+    setMessage(res.data[resultField])
+    setShowAiMenu(false)
+
+  } catch (err) {
+    console.error(`${label} error:`, err)
+  } finally {
+    setLoadingAi(false)
+  }
+}
+
+const handleTranslate = () =>
+  runAiAction(
+    "/ai/translate/",
+    { message, target_language: "uzbek" },
+    "translated_text",
+    "Translate"
+  )
+
+const handleGrammarFix = () =>
+  runAiAction(
+    "/ai/grammar-fix/",
+    { message },
+    "corrected_text",
+    "Grammar Fix"
+  )
+
+const handleRewrite = (tone) =>
+  runAiAction(
+    "/ai/rewrite/",
+    { message, tone },
+    "rewritten_text",
+    "Rewrite"
+  )
 
 
   return (
@@ -373,6 +550,31 @@ const handleFileUpload = async (file) => {
         </div>
       )}
 
+      {(loadingSuggestions || suggestions.length > 0) && (
+  <div className="ai-suggestions">
+
+    {loadingSuggestions && (
+      <div className="ai-loading">
+        AI is thinking...
+      </div>
+    )}
+
+    {suggestions.map((suggestion, index) => (
+      <button
+        key={index}
+        className="suggestion-chip"
+        onClick={() => {
+          setMessage(suggestion)
+          setSuggestions([])
+        }}
+      >
+        ✨ {suggestion}
+      </button>
+    ))}
+
+  </div>
+)}
+
       {/* Input area */}
       <div className="input-area">
         {/* Attachment button */}
@@ -402,6 +604,17 @@ const handleFileUpload = async (file) => {
           </svg>
         </button>
 
+        {/* AI tools */}
+        <button
+          ref={aiButtonRef}
+          className="action-button ai-button"
+          onClick={() => setShowAiMenu(prev => !prev)}
+          disabled={!isConnected}
+          title="AI Tools"
+        >
+          ✨
+        </button>
+
         {/* Hidden file input */}
         <input
           type="file"
@@ -417,19 +630,25 @@ const handleFileUpload = async (file) => {
             value={message}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={isConnected ? "Type a message..." : "Connecting..."}
+            placeholder={
+              !isConnected
+                ? "Connecting..."
+                : conversation?.type === "channel"
+                ? "Broadcast a message..."
+                : "Type a message..."
+            }
             disabled={!isConnected}
             className="message-textarea"
             rows="1"
           />
           
           {/* Voice button (appears when input is empty) */}
-          {!message.trim() && !selectedFile && (
+          {!message.trim() && !selectedFile && !isRecording && (
             <button
-              className={`voice-button ${isRecording ? 'recording' : ''}`}
-              onClick={toggleRecording}
+              className="voice-button"
+              onClick={startRecording}
               disabled={!isConnected}
-              title={isRecording ? "Stop recording" : "Voice message"}
+              title="Voice message"
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                 <path d="M12 2C10.9 2 10 2.9 10 4V12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12V4C14 2.9 13.1 2 12 2Z" stroke="currentColor" strokeWidth="1.8"/>
@@ -439,10 +658,34 @@ const handleFileUpload = async (file) => {
               </svg>
             </button>
           )}
+
+          {isRecording && (
+            <div className="recording-indicator">
+              <span className="recording-dot" />
+              <span className="recording-time">{formatRecordingTime(recordingSeconds)}</span>
+              <button
+                className="recording-cancel"
+                onClick={() => stopRecording(true)}
+                title="Cancel"
+              >
+                🗑
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Send button */}
-        {(message.trim() || selectedFile) ? (
+        {isRecording ? (
+          <button
+            className="send-button"
+            onClick={() => stopRecording(false)}
+            title="Send voice message"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        ) : (message.trim() || selectedFile) ? (
           <button
             className="send-button"
             onClick={handleSend}
@@ -463,7 +706,49 @@ const handleFileUpload = async (file) => {
             </svg>
           </button>
         )}
+
+         {showAiMenu && (
+  <div className="ai-menu" ref={aiMenuRef}>
+
+    <button
+      className="ai-menu-item"
+      onClick={handleTranslate}
+    >
+      🌍 Translate
+    </button>
+
+    <button
+      className="ai-menu-item"
+      onClick={handleGrammarFix}
+    >
+      ✍️ Grammar Fix
+    </button>
+
+    <button
+      className="ai-menu-item"
+      onClick={() => handleRewrite("professional")}
+    >
+      💼 Professional
+    </button>
+
+    <button
+      className="ai-menu-item"
+      onClick={() => handleRewrite("friendly")}
+    >
+      😊 Friendly
+    </button>
+
+    <button
+      className="ai-menu-item"
+      onClick={() => handleRewrite("formal")}
+    >
+      📄 Formal
+    </button>
+
+  </div>
+)}
       </div>
+     
 
     {showEmojiPicker && (
   <div className="emoji-picker" ref={emojiPickerRef}>

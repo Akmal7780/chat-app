@@ -4,21 +4,14 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
-from .tasks import scan_file_task
 from rest_framework.views import APIView
-from utils.minio import get_s3
-import os
-from django.conf import settings
-from utils.files import get_file_type
-import uuid
-from apps.notifications.views import send_message_notification
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-from apps.conversations.models import ConversationParticipant
-from .models import Message, Attachment, Reaction
-from .serializers import MessageSerializer, ReactionSerializer
+from django.http import HttpResponse
+from utils.link_preview import fetch_link_preview, LinkPreviewError
+from apps.conversations.models import Conversation, ConversationParticipant
+from .models import Message
+from .serializers import MessageSerializer
 from apps.users.throttles import MessageThrottle,UploadThrottle
+from . import services
 
 class InitUpload(APIView):
     authentication_classes = [JWTAuthentication]
@@ -26,35 +19,14 @@ class InitUpload(APIView):
     throttle_classes = [UploadThrottle]
 
     def post(self, request):
-        s3 = get_s3()
-
         file_name = request.data.get("file_name")
-        conversation_id = request.data.get("conversation_id")  
+        conversation_id = request.data.get("conversation_id")
 
-        # ❗ validation
         if not file_name or not conversation_id:
             return Response({"error": "file_name and conversation_id required"}, status=400)
 
-        # 🔐 security check
-        is_participant = ConversationParticipant.objects.filter(
-            conversation_id=conversation_id,
-            user=request.user
-        ).exists()
-
-        if not is_participant:
-            return Response({"error": "Not allowed"}, status=403)
-
-        key = f"users/{request.user.id}/conversations/{conversation_id}/{uuid.uuid4()}_{file_name}"
-
-        res = s3.create_multipart_upload(
-            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-            Key=key,
-        )
-
-        return Response({
-            "upload_id": res["UploadId"],
-            "key": key
-        })
+        result = services.initiate_upload(request.user, conversation_id, file_name)
+        return Response(result)
 
 class UploadPartDirect(APIView):
     authentication_classes = [JWTAuthentication]
@@ -63,43 +35,10 @@ class UploadPartDirect(APIView):
     throttle_classes = [UploadThrottle]
 
     def post(self, request):
-        s3 = get_s3()
-
         file = request.FILES.get("file")
 
         if not file:
             return Response({"error": "file required"}, status=400)
-
-        try:
-            import magic
-
-            header = file.read(1024)
-            file.seek(0)
-
-            mime = magic.from_buffer(header, mime=True)
-            print(f"📦 Uploaded file MIME: {mime}")
-
-        except Exception as e:
-            print("⚠️ Magic error:", e)
-
-
-        MAX_CHUNK_SIZE = 5 * 1024 * 1024  # 5MB
-
-        if file.size > MAX_CHUNK_SIZE:
-            return Response({"error": "Chunk too large"}, status=400)
-
-        safe_name = os.path.basename(file.name)
-
-        if len(safe_name) > 255:
-            return Response({"error": "Filename too long"}, status=400)
-
-        try:
-            part_number = int(request.data.get("part_number", 0))
-        except ValueError:
-            return Response({"error": "Invalid part number"}, status=400)
-
-        if part_number <= 0 or part_number > 1000:
-            return Response({"error": "Invalid part number range"}, status=400)
 
         key = request.data.get("key")
         upload_id = request.data.get("upload_id")
@@ -107,98 +46,41 @@ class UploadPartDirect(APIView):
         if not key or not upload_id:
             return Response({"error": "Missing upload data"}, status=400)
 
-        if not key.startswith(f"users/{request.user.id}/"):
-            return Response({"error": "Invalid file path"}, status=403)
-
-        # =========================
-        # 🚀 UPLOAD TO MINIO
-        # =========================
         try:
-            res = s3.upload_part(
-                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-                Key=key,
-                UploadId=upload_id,
-                PartNumber=part_number,
-                Body=file,
-            )
+            part_number = int(request.data.get("part_number", 0))
+        except ValueError:
+            return Response({"error": "Invalid part number"}, status=400)
+
+        try:
+            etag = services.upload_part(request.user, key, upload_id, part_number, file)
         except Exception as e:
-            print("❌ Upload error:", e)
             return Response({"error": "Upload failed"}, status=500)
 
-        # =========================
-        # ✅ SUCCESS
-        # =========================
-        return Response({
-            "ETag": res["ETag"].replace('"', '')
-        })
+        return Response({"ETag": etag})
+
 class CompleteUpload(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     throttle_classes = [UploadThrottle]
 
     def post(self, request):
-
         conversation_id = request.data.get("conversation_id")
         file_name = request.data.get("file_name")
 
         if not file_name or not conversation_id:
             return Response({"error": "Invalid data"}, status=400)
 
-        is_participant = ConversationParticipant.objects.filter(
+        services.complete_upload(
+            request.user,
+            request,
             conversation_id=conversation_id,
-            user=request.user
-        ).exists()
-
-        if not is_participant:
-            return Response({"error": "Not allowed"}, status=403)
-
-        s3 = get_s3()
-
-        key = request.data.get("key")
-        if not key.startswith(f"users/{request.user.id}/"):
-            return Response({"error": "Invalid file path"}, status=403)
-
-        s3.complete_multipart_upload(
-            Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-            Key=key,
-            UploadId=request.data["upload_id"],
-            MultipartUpload={"Parts": request.data["parts"]},
+            file_name=file_name,
+            key=request.data.get("key"),
+            upload_id=request.data["upload_id"],
+            parts=request.data["parts"],
+            size=request.data["size"],
+            message_type=request.data.get("message_type"),
         )
-
-        file_type = get_file_type(request.data["file_name"])
-        if not file_type:
-            file_type = "file"
-
-        message = Message.objects.create(
-            conversation_id=conversation_id,
-            sender=request.user,
-            message_type=file_type
-        )
-
-        attachment = Attachment.objects.create(
-            message=message,
-            file=key,
-            file_type=file_type,
-            file_size=request.data["size"],
-            original_name=request.data["file_name"],
-            scan_status="pending"
-        )
-
-        
-
-        channel_layer = get_channel_layer()
-
-        async_to_sync(channel_layer.group_send)(
-            f"chat_{message.conversation_id}",
-            {
-                "type": "message",
-                "message": MessageSerializer(
-                    message,
-                    context={"request": request}
-                ).data
-            }
-        )
-        scan_file_task.delay(attachment.id)
 
         return Response({"status": "uploaded"})
 
@@ -207,25 +89,12 @@ class DeleteAttachment(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
-        s3 = get_s3()
+        deleted = services.delete_attachment(request.user, pk)
 
-        try:
-            attachment = Attachment.objects.get(id=pk)
-
-            if attachment.message.sender != request.user:
-                return Response({"error": "Not allowed"}, status=403)
-
-            s3.delete_object(
-                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-                Key=attachment.file
-            )
-
-            attachment.delete()
-
-            return Response({"success": True})
-
-        except Attachment.DoesNotExist:
+        if not deleted:
             return Response({"error": "Not found"}, status=404)
+
+        return Response({"success": True})
 
 class MessageViewSet(viewsets.ModelViewSet):
     serializer_class = MessageSerializer
@@ -276,112 +145,20 @@ class MessageViewSet(viewsets.ModelViewSet):
         message = self.get_object()
         emoji = request.data.get("emoji")
 
-        if message.sender == request.user:
-            return Response(
-                {"error": "Cannot react to your own message"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not emoji or emoji in ["undefined", "null", ""]:
-            return Response(
-                {"error": "Valid emoji is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        channel_layer = get_channel_layer()
-
-        old_reaction = Reaction.objects.filter(
-            message=message,
-            user=request.user
-        ).first()
-
-        if old_reaction:
-            if old_reaction.emoji == emoji:
-                old_reaction.delete()
-
-                async_to_sync(channel_layer.group_send)(
-                    f"chat_{message.conversation_id}",
-                    {
-                        "type": "reaction",
-                        "action": "removed",
-                        "message_id": message.id,
-                        "user_id": request.user.id,
-                        "emoji": emoji,
-                    }
-                )
-                return Response({"removed": True})
-
-            old_emoji = old_reaction.emoji
-            old_reaction.delete()
-
-            async_to_sync(channel_layer.group_send)(
-                f"chat_{message.conversation_id}",
-                {
-                    "type": "reaction",
-                    "action": "removed",
-                    "message_id": message.id,
-                    "user_id": request.user.id,
-                    "emoji": old_emoji,
-                }
-            )
-
-        reaction = Reaction.objects.create(
-            message=message,
-            user=request.user,
-            emoji=emoji
-        )
-
-        reaction_data = ReactionSerializer(reaction).data
-
-        async_to_sync(channel_layer.group_send)(
-            f"chat_{message.conversation_id}",
-            {
-                "type": "reaction",
-                "action": "added",
-                "message_id": message.id,
-                "user_id": request.user.id,
-                "reaction": reaction_data
-            }
-        )
-
-        return Response(reaction_data)
+        result = services.toggle_reaction(request.user, message, emoji)
+        return Response(result)
 
     # =========================
     # DELETE REACTION
     # =========================
     @action(detail=True, methods=["delete"], url_path="reactions/(?P<reaction_id>[^/.]+)")
     def delete_reaction(self, request, pk=None, reaction_id=None):
-        try:
-            reaction = Reaction.objects.get(
-                id=reaction_id,
-                user=request.user,
-                message_id=pk
-            )
+        deleted = services.delete_reaction(request.user, pk, reaction_id)
 
-            message = reaction.message
-            emoji = reaction.emoji
-            reaction.delete()
+        if not deleted:
+            return Response({"error": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)
 
-            channel_layer = get_channel_layer()
-
-            async_to_sync(channel_layer.group_send)(
-                f"chat_{message.conversation_id}",
-                {
-                    "type": "reaction",
-                    "action": "removed",
-                    "message_id": message.id,
-                    "user_id": request.user.id,
-                    "emoji": emoji,
-                }
-            )
-
-            return Response({"deleted": True})
-
-        except Reaction.DoesNotExist:
-            return Response(
-                {"error": "Reaction not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        return Response({"deleted": True})
 
     # =========================
     # CONTEXT
@@ -409,3 +186,157 @@ class MessageViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(messages, many=True)
         return Response(serializer.data)
+
+    # =========================
+    # EXPORT CHAT HISTORY
+    # =========================
+    @action(detail=False, methods=["get"])
+    def export(self, request):
+        conversation_id = request.GET.get("conversation_id")
+
+        if not conversation_id:
+            return Response({"error": "conversation_id is required"}, status=400)
+
+        is_participant = ConversationParticipant.objects.filter(
+            conversation_id=conversation_id,
+            user=request.user,
+            left_at__isnull=True,
+        ).exists()
+
+        if not is_participant:
+            return Response({"error": "Not a participant"}, status=403)
+
+        try:
+            conversation = Conversation.objects.get(id=conversation_id)
+        except Conversation.DoesNotExist:
+            return Response({"error": "Conversation not found"}, status=404)
+
+        messages = Message.objects.filter(
+            conversation_id=conversation_id, is_deleted=False
+        ).select_related("sender").prefetch_related("attachments").order_by("created_at")
+
+        call_status_labels = {
+            Message.CALL_COMPLETED: "completed",
+            Message.CALL_DECLINED: "declined",
+            Message.CALL_MISSED_OR_CANCELED: "missed/canceled",
+        }
+
+        lines = []
+        for message in messages:
+            timestamp = message.created_at.strftime("%Y-%m-%d %H:%M")
+            sender = message.sender.username
+
+            if message.message_type == Message.SYSTEM:
+                body = f"[{message.content}]"
+            elif message.message_type == Message.CALL:
+                kind = "Video call" if message.call_is_video else "Voice call"
+                status_label = call_status_labels.get(message.call_status, message.call_status)
+                duration = f", {message.call_duration_seconds}s" if message.call_duration_seconds else ""
+                body = f"[{kind} — {status_label}{duration}]"
+            elif message.message_type == Message.VOICE:
+                body = "[Voice message]"
+            elif message.attachments.exists():
+                names = ", ".join(a.original_name or a.file_type for a in message.attachments.all())
+                body = f"[{message.message_type.capitalize()}: {names}]"
+                if message.content:
+                    body = f"{message.content} {body}"
+            else:
+                body = message.content
+
+            lines.append(f"[{timestamp}] {sender}: {body}")
+
+        content = "\n".join(lines)
+        raw_name = conversation.name or "chat"
+        safe_name = "".join(
+            c for c in raw_name if c.isalnum() or c in (" ", "-", "_")
+        ).strip() or "chat"
+
+        response = HttpResponse(content, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{safe_name}_export.txt"'
+        return response
+
+
+class LogCallAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        conversation_id = request.data.get("conversation_id")
+        call_status = request.data.get("call_status")
+        is_video = request.data.get("is_video", False)
+        duration_seconds = request.data.get("duration_seconds")
+
+        if not conversation_id or not call_status:
+            return Response({"error": "conversation_id and call_status are required"}, status=400)
+
+        message = services.log_call(
+            request.user,
+            request,
+            conversation_id=conversation_id,
+            call_status=call_status,
+            is_video=is_video,
+            duration_seconds=duration_seconds,
+        )
+
+        return Response(MessageSerializer(message, context={"request": request}).data)
+
+
+class CallLogListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # local import avoids a circular import at module load time
+        from apps.users.serializers import UserSerializer
+
+        calls = Message.objects.filter(
+            message_type=Message.CALL,
+            conversation__type=Conversation.PRIVATE,
+            conversation__participants__user=request.user,
+        ).select_related("sender").prefetch_related(
+            "conversation__participants__user"
+        ).order_by("-created_at")[:200]
+
+        results = []
+        for call in calls:
+            other_participant = None
+            for participant in call.conversation.participants.all():
+                if participant.user_id != request.user.id:
+                    other_participant = participant.user
+                    break
+
+            # Saved Messages (a private "conversation" with yourself) has no
+            # other participant — there's nothing meaningful to log here.
+            if not other_participant:
+                continue
+
+            results.append({
+                "id": call.id,
+                "conversation_id": call.conversation_id,
+                "other_user": UserSerializer(other_participant, context={"request": request}).data,
+                "direction": "outgoing" if call.sender_id == request.user.id else "incoming",
+                "call_status": call.call_status,
+                "call_is_video": call.call_is_video,
+                "call_duration_seconds": call.call_duration_seconds,
+                "created_at": call.created_at,
+            })
+
+        return Response(results)
+
+
+class LinkPreviewAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        url = request.GET.get("url")
+
+        if not url:
+            return Response({"error": "url is required"}, status=400)
+
+        try:
+            preview = fetch_link_preview(url)
+        except LinkPreviewError as e:
+            return Response({"error": str(e)}, status=422)
+
+        return Response(preview)

@@ -3,10 +3,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 
-from .models import Conversation, ConversationParticipant
-from .serializers import ConversationSerializer, ConversationParticipantSerializer
-from django.db.models import Count
+from .models import Conversation, ConversationParticipant, ChatFolder
+from .serializers import ConversationSerializer, ConversationParticipantSerializer, ChatFolderSerializer
+from . import services
 
 User = get_user_model()
 
@@ -17,11 +18,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Conversation.objects.filter(
-            participants__user=self.request.user
-        ).annotate(
-            members_count=Count("participants__user", distinct=True)
-        ).distinct()
+        return services.annotated_conversations_for(self.request.user)
 
     def create(self, request, *args, **kwargs):
 
@@ -45,13 +42,35 @@ class ConversationViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # existing private chat 
-            existing = Conversation.objects.filter(
-                type="private",
-                participants__user=request.user
-            ).filter(
-                participants__user=participant
-            ).first()
+            if participant.id != request.user.id:
+                # local import avoids a circular import at module load time
+                from apps.users.models import BlockedUser
+                blocked = BlockedUser.objects.filter(
+                    Q(user=request.user, blocked_user=participant) |
+                    Q(user=participant, blocked_user=request.user)
+                ).exists()
+                if blocked:
+                    return Response(
+                        {"error": "Cannot start a conversation with this user"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+            # "Saved Messages": a private conversation with only yourself.
+            # Handled separately because the two-participant lookup below
+            # (participants__user=request.user AND participants__user=participant)
+            # is trivially satisfied by ANY of the user's private chats when
+            # participant == request.user, since both conditions are identical —
+            # it would return an unrelated 1:1 chat instead of the self-chat.
+            if participant.id == request.user.id:
+                conversation, created = services.get_or_create_self_chat(request.user)
+                serializer = self.get_serializer(conversation)
+                return Response(
+                    serializer.data,
+                    status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+                )
+
+            # existing private chat between the two different users
+            existing = services.find_existing_private_chat(request.user, participant)
 
             if existing:
                 serializer = self.get_serializer(existing)
@@ -65,6 +84,22 @@ class ConversationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(conversation)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        conversation = self.get_object()
+
+        if conversation.type in (Conversation.GROUP, Conversation.CHANNEL):
+            participant = ConversationParticipant.objects.filter(
+                conversation=conversation, user=request.user
+            ).first()
+
+            if not participant or participant.role != "admin":
+                return Response(
+                    {"error": "Only admins can edit this conversation"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        return super().update(request, *args, **kwargs)
 
     # ===============================
     # ADD MEMBER TO GROUP
@@ -140,9 +175,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         conversation = self.get_object()
 
-        if conversation.type != Conversation.GROUP:
+        if conversation.type not in (Conversation.GROUP, Conversation.CHANNEL):
             return Response(
-                {"error": "Members list only available for group chats"},
+                {"error": "Members list only available for group/channel chats"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -153,6 +188,102 @@ class ConversationViewSet(viewsets.ModelViewSet):
         serializer = ConversationParticipantSerializer(participants, many=True)
 
         return Response(serializer.data)
+
+    # ===============================
+    # PIN / MUTE / MARK READ (per-user chats-list state)
+    # ===============================
+
+    def _set_own_participant_flag(self, request, field, value):
+        conversation = self.get_object()
+        services.set_participant_flag(request.user, conversation, field, value)
+
+        # Re-fetch through get_queryset() so the annotated/prefetched fields
+        # (unread_count, participants) reflect the update we just made —
+        # the `conversation` instance above still holds pre-update state.
+        conversation = self.get_queryset().get(pk=conversation.pk)
+        serializer = self.get_serializer(conversation)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def pin(self, request, pk=None):
+        return self._set_own_participant_flag(request, "is_pinned", True)
+
+    @action(detail=True, methods=["post"])
+    def unpin(self, request, pk=None):
+        return self._set_own_participant_flag(request, "is_pinned", False)
+
+    @action(detail=True, methods=["post"])
+    def mute(self, request, pk=None):
+        return self._set_own_participant_flag(request, "is_muted", True)
+
+    @action(detail=True, methods=["post"])
+    def unmute(self, request, pk=None):
+        return self._set_own_participant_flag(request, "is_muted", False)
+
+    @action(detail=True, methods=["post"])
+    def mark_read(self, request, pk=None):
+        conversation = self.get_object()
+        services.mark_conversation_read(request.user, conversation)
+
+        conversation = self.get_queryset().get(pk=conversation.pk)
+        serializer = self.get_serializer(conversation)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def leave(self, request, pk=None):
+        conversation = self.get_object()
+
+        if conversation.type not in (Conversation.GROUP, Conversation.CHANNEL):
+            return Response(
+                {"error": "Can only leave group/channel chats"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ConversationParticipant.objects.filter(
+            conversation=conversation, user=request.user
+        ).delete()
+
+        return Response({"message": "Left conversation"})
+
+    # ===============================
+    # PUBLIC CHANNEL DISCOVERY
+    # ===============================
+
+    @action(detail=False, methods=["get"])
+    def public(self, request):
+        search = request.query_params.get("search", "").strip()
+
+        queryset = Conversation.objects.filter(type=Conversation.CHANNEL, is_public=True)
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(invite_slug__icontains=search)
+            )
+
+        queryset = queryset.order_by("name")[:30]
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def join(self, request, pk=None):
+        # Bypasses get_queryset()/get_object() on purpose: a public channel
+        # the user hasn't joined yet is not in their own conversations list,
+        # so the normal participant-scoped lookup would 404 it.
+        try:
+            conversation = Conversation.objects.get(
+                pk=pk, type=Conversation.CHANNEL, is_public=True
+            )
+        except Conversation.DoesNotExist:
+            return Response({"error": "Public channel not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if ConversationParticipant.objects.filter(conversation=conversation, user=request.user).exists():
+            return Response({"error": "Already a member"}, status=status.HTTP_400_BAD_REQUEST)
+
+        ConversationParticipant.objects.create(
+            conversation=conversation, user=request.user, role="member"
+        )
+
+        serializer = self.get_serializer(conversation)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class ConversationParticipantViewSet(viewsets.ModelViewSet):
@@ -166,3 +297,12 @@ class ConversationParticipantViewSet(viewsets.ModelViewSet):
         return ConversationParticipant.objects.filter(
             conversation__participants__user=self.request.user
         ).distinct()
+
+
+class ChatFolderViewSet(viewsets.ModelViewSet):
+
+    serializer_class = ChatFolderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return ChatFolder.objects.filter(user=self.request.user).prefetch_related("conversations")

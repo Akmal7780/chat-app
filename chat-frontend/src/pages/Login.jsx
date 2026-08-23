@@ -11,6 +11,54 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // Two-Step Verification (a second password on top of the normal one)
+  const [twoFAStep, setTwoFAStep] = useState(false);
+  const [tempToken, setTempToken] = useState(null);
+  const [twoFAHint, setTwoFAHint] = useState("");
+  const [twoFAPassword, setTwoFAPassword] = useState("");
+
+  const completeLogin = (data, fallbackEmail) => {
+    if (!data.access) {
+      alert("Login failed: No access token");
+      return;
+    }
+
+    localStorage.setItem("token", data.access);
+    localStorage.setItem("refresh_token", data.refresh || "");
+
+    let userData = null;
+
+    if (data.user) {
+      userData = data.user;
+    } else {
+      try {
+        const tokenParts = data.access.split('.');
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(atob(tokenParts[1]));
+
+          userData = {
+            id: payload.user_id || payload.id || 1,
+            username: payload.username || fallbackEmail?.split('@')[0],
+            email: payload.email || fallbackEmail
+          };
+        }
+      } catch (e) {
+        console.log("Token decode error:", e);
+      }
+    }
+
+    if (!userData) {
+      userData = {
+        id: 1,
+        username: fallbackEmail?.split('@')[0],
+        email: fallbackEmail
+      };
+    }
+
+    localStorage.setItem("user", JSON.stringify(userData));
+    navigate("/chat");
+  };
+
   // 🔐 NORMAL LOGIN
   const handleLogin = async () => {
     if (!email || !password) {
@@ -20,54 +68,49 @@ function Login() {
 
     try {
       setLoading(true);
-      
+
       const res = await api.post("/users/login/", {
         email,
         password
       });
 
-      if (res.data.access) {
-        localStorage.setItem("token", res.data.access);
-        localStorage.setItem("refresh_token", res.data.refresh || "");
-        
-        let userData = null;
-        
-        if (res.data.user) {
-          userData = res.data.user;
-        } else {
-          try {
-            const tokenParts = res.data.access.split('.');
-            if (tokenParts.length === 3) {
-              const payload = JSON.parse(atob(tokenParts[1]));
-              
-              userData = {
-                id: payload.user_id || payload.id || 1,
-                username: payload.username || email.split('@')[0],
-                email: payload.email || email
-              };
-            }
-          } catch (e) {
-            console.log("Token decode error:", e);
-          }
-        }
-        
-        if (!userData) {
-          userData = {
-            id: 1,
-            username: email.split('@')[0],
-            email: email
-          };
-        }
-        
-        localStorage.setItem("user", JSON.stringify(userData));
-        navigate("/chat");
-      } else {
-        alert("Login failed: No access token");
+      if (res.data.requires_2fa) {
+        setTempToken(res.data.temp_token);
+        setTwoFAHint(res.data.hint || "");
+        setTwoFAStep(true);
+        return;
       }
+
+      completeLogin(res.data, email);
 
     } catch (err) {
       console.log("❌ Login error:", err);
       alert(err.response?.data?.detail || "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🔒 TWO-STEP VERIFICATION
+  const handleVerify2FA = async () => {
+    if (!twoFAPassword) {
+      alert("Please enter your password");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await api.post("/users/login/verify-2fa/", {
+        temp_token: tempToken,
+        password: twoFAPassword,
+      });
+
+      completeLogin(res.data, email);
+
+    } catch (err) {
+      console.log("❌ 2FA verify error:", err);
+      alert(err.response?.data?.error || "Incorrect password");
     } finally {
       setLoading(false);
     }
@@ -113,6 +156,58 @@ function Login() {
       console.log("❌ Google login failed");
     },
   });
+
+  if (twoFAStep) {
+    return (
+      <div className="auth-container">
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-2fa-icon">🔒</div>
+            <h2 className="auth-title">Two-Step Verification</h2>
+            <p className="auth-subtitle">Enter the additional password you set for your account.</p>
+          </div>
+
+          <div className="auth-form">
+            <div className="input-group">
+              <label className="input-label">Password</label>
+              <div className="input-wrapper">
+                <input
+                  type="password"
+                  className="auth-input"
+                  placeholder="Enter your password"
+                  value={twoFAPassword}
+                  onChange={(e) => setTwoFAPassword(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e) => e.key === "Enter" && handleVerify2FA()}
+                />
+              </div>
+              {twoFAHint && <small className="auth-2fa-hint">Hint: {twoFAHint}</small>}
+            </div>
+
+            <button
+              className="auth-button"
+              onClick={handleVerify2FA}
+              disabled={loading}
+            >
+              {loading ? "Loading..." : "Continue"}
+            </button>
+
+            <button
+              className="auth-button auth-button-secondary"
+              onClick={() => {
+                setTwoFAStep(false)
+                setTwoFAPassword("")
+                setTempToken(null)
+              }}
+              disabled={loading}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="auth-container">

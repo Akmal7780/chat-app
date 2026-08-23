@@ -13,6 +13,7 @@ function ProfileEdit({ user, onClose, onUpdate }) {
   const fileInputRef = useRef(null);
   const modalRef = useRef(null);
 
+  // ESC tugmasi bilan yopish
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === 'Escape') onClose();
@@ -21,149 +22,145 @@ function ProfileEdit({ user, onClose, onUpdate }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-useEffect(() => {
-  return () => {
-    if (previewUrl && previewUrl.startsWith("blob:")) {
-  URL.revokeObjectURL(previewUrl);
-}
+  // Blob URL larni tozalash (memory leak oldini olish)
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Rasmni tanlash
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Formatni tekshirish
+    if (!file.type.startsWith("image/")) {
+      setErrors(prev => ({ ...prev, avatar: "Iltimos, rasm faylini tanlang" }));
+      return;
+    }
+
+    // 5MB cheklov
+    if (file.size > 5 * 1024 * 1024) {
+      setErrors(prev => ({ ...prev, avatar: "Rasm hajmi 5MB dan kichik bo'lishi kerak" }));
+      return;
+    }
+
+    // Preview yaratish
+    const preview = URL.createObjectURL(file);
+    setPreviewUrl(preview);
+    setAvatarFile(file);  
+    setErrors(prev => ({ ...prev, avatar: null }));
   };
-}, [previewUrl]);
 
-// Select image from file
-const handleImageSelect = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  // Rasmni o'chirish
+  const handleRemoveImage = () => {
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setPreviewUrl("");
+    setAvatarFile(null);  
+    setErrors(prev => ({ ...prev, avatar: null }));
 
-  // Validate format
-  if (!file.type.startsWith("image/")) {
-    setErrors(prev => ({ ...prev, avatar: "Please select an image file" }));
-    return;
-  }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
-  // File exceeds 5MB limit
-  if (file.size > 5 * 1024 * 1024) {
-    setErrors(prev => ({ ...prev, avatar: "Please upload an image smaller than 5MB" }));
-    return;
-  }
-
-  // Preview (fast & optimized)
-  const preview = URL.createObjectURL(file);
-
-  setPreviewUrl(preview);
-  setAvatarFile(file);  
-  setErrors(prev => ({ ...prev, avatar: null }));
-};
-
-// Remove image
-const handleRemoveImage = () => {
-  setPreviewUrl("");
-  setAvatarFile(null);  
-  setErrors(prev => ({ ...prev, avatar: null }));
-
-  if (fileInputRef.current) {
-    fileInputRef.current.value = "";
-  }
-};
-
-  // Check form
+  // Formani tekshirish
   const validateForm = () => {
     const newErrors = {};
     
     if (!username.trim()) {
-      newErrors.username = 'Username is required';
+      newErrors.username = 'Username kiritilishi shart';
     } else if (username.length < 3) {
-      newErrors.username = 'Username must be at least 3 characters long';
+      newErrors.username = 'Username kamida 3 ta belgidan iborat bo\'lishi kerak';
     } else if (username.length > 30) {
-      newErrors.username = 'Maximum 30 characters allowed for username';
+      newErrors.username = 'Username maksimal 30 ta belgidan iborat bo\'lishi kerak';
     }
     
     if (bio && bio.length > 500) {
-      newErrors.bio = 'Maximum 500 characters allowed for bio';
+      newErrors.bio = 'Bio maksimal 500 ta belgidan iborat bo\'lishi kerak';
     }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Saqlash
   const handleSave = async () => {
-  if (!validateForm()) return;
+    if (!validateForm()) return;
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const formData = new FormData();
+      const formData = new FormData();
+      formData.append("username", username.trim());
+      formData.append("bio", bio.trim());
 
-    // 🔹 text fieldlar
-    formData.append("username", username.trim());
-    formData.append("bio", bio.trim());
-
-    // 🔥 AVATAR LOGIC
-    if (avatarFile) {
-      
-      formData.append("avatar", avatarFile);
-    } else if (!previewUrl) {
-   
-      formData.append("avatar", "");   
-    }
-
-    const res = await api.patch("/users/profile/update/", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-
-    const updatedUser = res.data;
-
-    // 🔥 FORCE CLEAN
-    const cleanUser = {
-      ...updatedUser,
-      avatar_url: updatedUser.avatar_url || null
-    };
-
-    localStorage.setItem("user", JSON.stringify(cleanUser));
-
-    onUpdate(cleanUser);
-    onClose();
-
-  } catch (err) {
-    console.log("❌ Backend error:", err.response?.data);
-
-    if (err.response?.data) {
-      const errors = err.response.data;
-
-      if (typeof errors === "object") {
-        const firstError = Object.values(errors)[0];
-        alert(Array.isArray(firstError) ? firstError[0] : firstError);
-      } else {
-        alert("An error occurred");
+      // Avatar logikasi
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      } else if (!previewUrl) {
+        formData.append("avatar", "");   
       }
-    } else {
-      alert("Failed to connect to the server");
-    }
 
-  } finally {
-    setLoading(false);
-  }
-};
+      const res = await api.patch("/users/profile/update/", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      const updatedUser = res.data;
+      const cleanUser = {
+        ...updatedUser,
+        avatar_url: updatedUser.avatar_url || null
+      };
+
+      localStorage.setItem("user", JSON.stringify(cleanUser));
+      onUpdate(cleanUser);
+      onClose();
+
+    } catch (err) {
+      console.log("❌ Backend error:", err.response?.data);
+
+      if (err.response?.data) {
+        const errors = err.response.data;
+        if (typeof errors === "object") {
+          const firstError = Object.values(errors)[0];
+          alert(Array.isArray(firstError) ? firstError[0] : firstError);
+        } else {
+          alert("Xatolik yuz berdi");
+        }
+      } else {
+        alert("Serverga ulanishda xatolik yuz berdi");
+      }
+
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="profile-edit-overlay" onClick={onClose}>
       <div 
-        className="profile-edit-modal glass-effect" 
+        className="profile-edit-modal"
         onClick={(e) => e.stopPropagation()}
         ref={modalRef}
       >
-        
         {/* Modal Header */}
         <div className="profile-edit-header">
           <h2>
             <span className="header-icon">✎</span>
-            Update profile
+            Profilni yangilash
           </h2>
           <button 
             className="close-btn" 
             onClick={onClose}
             disabled={loading}
-            title="Close (ESC)"
+            title="Yopish (ESC)"
           >
             ×
           </button>
@@ -172,7 +169,7 @@ const handleRemoveImage = () => {
         {/* Form */}
         <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
           
-          {/* Avatar Upload Section */}
+          {/* Avatar Yuklash Section */}
           <div className="avatar-upload-section">
             <div className="avatar-preview-container">
               {previewUrl ? (
@@ -180,20 +177,20 @@ const handleRemoveImage = () => {
                   <img 
                     src={previewUrl} 
                     alt="Avatar preview" 
-                    className="avatar-preview neon-glow"
+                    className="avatar-preview"
                   />
                   <button 
                     type="button"
                     className="remove-avatar-btn"
                     onClick={handleRemoveImage}
                     disabled={loading}
-                    title="Remove image"
+                    title="Rasmni o'chirish"
                   >
                     ×
                   </button>
                 </>
               ) : (
-                <div className="avatar-placeholder neon-glow">
+                <div className="avatar-placeholder">
                   {username?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
@@ -218,9 +215,8 @@ const handleRemoveImage = () => {
                   disabled={loading}
                 >
                   <span className="upload-icon">📁</span>
-                  Select image
+                  Rasm tanlash
                 </button>
-                
               </div>
 
               {errors.avatar && (
@@ -228,23 +224,24 @@ const handleRemoveImage = () => {
               )}
               
               <small className="upload-hint">
-                Image format: JPG, PNG, GIF (max 5MB)
+                Rasm formati: JPG, PNG, GIF (maks. 5MB)
               </small>
             </div>
           </div>
 
           {/* Username Input */}
-          <div className="form-group">
+          <div className="edit-form-group">
             <label htmlFor="username">
               Username 
               <span className="required">*</span>
-              <span className="input-hint">Username must be 3–30 characters long</span>
+              <span className="input-hint">Username 3-30 ta belgidan iborat bo'lishi kerak</span>
             </label>
             <div className="input-wrapper">
               <span className="input-icon">👤</span>
               <input
                 type="text"
                 id="username"
+                className={`profile-input ${errors.username ? 'error' : ''}`}
                 value={username}
                 onChange={(e) => {
                   setUsername(e.target.value);
@@ -252,8 +249,7 @@ const handleRemoveImage = () => {
                     setErrors({ ...errors, username: null });
                   }
                 }}
-                placeholder="Enter your username"
-                className={errors.username ? 'error' : ''}
+                placeholder="Username kiriting"
                 disabled={loading}
                 maxLength={30}
               />
@@ -264,7 +260,7 @@ const handleRemoveImage = () => {
           </div>
 
           {/* Bio Textarea */}
-          <div className="form-group">
+          <div className="edit-form-group">
             <label htmlFor="bio">
               Bio
               <span className="char-count">
@@ -275,6 +271,7 @@ const handleRemoveImage = () => {
               <span className="textarea-icon">📝</span>
               <textarea
                 id="bio"
+                className={`profile-input ${errors.bio ? 'error' : ''}`}
                 value={bio}
                 onChange={(e) => {
                   setBio(e.target.value);
@@ -282,8 +279,7 @@ const handleRemoveImage = () => {
                     setErrors({ ...errors, bio: null });
                   }
                 }}
-                placeholder="Write a short bio about yourself..."
-                className={errors.bio ? 'error' : ''}
+                placeholder="O'zingiz haqida qisqacha ma'lumot..."
                 disabled={loading}
                 maxLength={500}
                 rows={4}
@@ -295,14 +291,14 @@ const handleRemoveImage = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="form-actions">
+          <div className="profile-edit-footer">
             <button
               type="button"
               className="cancel-btn"
               onClick={onClose}
               disabled={loading}
             >
-              Cancel
+              Bekor qilish
             </button>
             
             <button
@@ -313,18 +309,18 @@ const handleRemoveImage = () => {
               {loading ? (
                 <>
                   <span className="spinner-small"></span>
-                  Saving changes...
+                  Saqlanmoqda...
                 </>
               ) : (
                 <>
                   <span className="save-icon">✓</span>
-                  Save
+                  Saqlash
                 </>
               )}
             </button>
           </div>
 
-          {/* Loading Overlay (optional) */}
+          {/* Loading Overlay */}
           {loading && (
             <div className="modal-loading-overlay">
               <div className="spinner-pulse-small"></div>

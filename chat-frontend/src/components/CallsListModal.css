@@ -1,0 +1,76 @@
+.calls-start-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border-obsidian);
+  background: transparent;
+  color: var(--indigo-accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.calls-start-new-btn:hover {
+  background: var(--border-obsidian-light);
+}
+
+.calls-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.calls-meta.missed {
+  color: #ef4444;
+}
+
+.calls-icon {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border-obsidian-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.calls-icon:hover {
+  background: var(--indigo-accent);
+}
+
+.calls-icon:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.calls-invite-link {
+  padding: 10px 8px;
+  color: var(--indigo-accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.calls-dial-row {
+  cursor: default;
+}
+
+.calls-dial-icons {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+}
+
+.calls-dial-icons .calls-icon {
+  margin-left: 0;
+}

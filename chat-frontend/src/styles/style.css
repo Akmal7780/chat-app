@@ -4,44 +4,57 @@
    1. Design System Tokens & Variables
    ========================================================================== */
 :root {
-  /* Obsidian Flux Color Palette */
-  --bg-obsidian: #0B0F19;           /* Level 0 Background Canvas */
-  --bg-obsidian-surface: #1E293B;   /* Level 1 Navigation / Sidebar / Header */
-  --bg-obsidian-card: #202b3e;      /* Level 2 Cards / Dialogs / Popups */
-  
-  --border-obsidian: #334155;       /* Subtle Border */
-  --border-obsidian-light: rgba(51, 65, 85, 0.4);
-  
-  --indigo-accent: #6366F1;         /* Primary Action Accent */
-  --cyan-accent: #06B6D4;           /* Highlights / New affordances */
-  --primary-color: #cfbcff;
-  --on-primary: #381e72;
-  
-  --on-surface: #e6e0e9;            /* Primary Text */
-  --on-surface-variant: #cbc4d2;    /* Muted Secondary Text */
-  --text-muted: #94A3B8;            /* Tertiary/Metadata Text */
-  
+  /* Telegram-style Light Palette (default theme) */
+  --bg-obsidian: #EEF1F4;           /* Level 0 Background Canvas */
+  --bg-obsidian-surface: #FFFFFF;   /* Level 1 Navigation / Sidebar / Header */
+  --bg-obsidian-card: #FFFFFF;      /* Level 2 Cards / Dialogs / Popups */
+
+  --border-obsidian: #E4E7EB;       /* Subtle Border */
+  --border-obsidian-light: rgba(0, 0, 0, 0.06);
+
+  --indigo-accent: #3390EC;         /* Primary Action Accent (Telegram blue) */
+  --cyan-accent: #00B8D4;           /* Highlights / New affordances */
+  --primary-color: #3390EC;
+  --on-primary: #FFFFFF;
+
+  --on-surface: #14171A;            /* Primary Text */
+  --on-surface-variant: #5B6169;    /* Muted Secondary Text */
+  --text-muted: #8B92A0;            /* Tertiary/Metadata Text */
+
+  /* Aliases so components can address the palette semantically */
+  --accent-primary: var(--indigo-accent);
+  --text-primary: var(--on-surface);
+  --text-secondary: var(--on-surface-variant);
+  --text-tertiary: var(--text-muted);
+
+  /* Message bubble colors — distinct from the general accent color */
+  --bubble-sent-bg: #EFFDDE;
+  --bubble-sent-text: #14171A;
+  --bubble-received-bg: #FFFFFF;
+  --bubble-received-text: #14171A;
+  --bubble-read-tick: #3390EC;
+
   --status-online: #22c55e;
   --status-away: #eab308;
-  --status-offline: #64748b;
-  
+  --status-offline: #94A3B8;
+
   /* Gradients */
-  --primary-gradient: linear-gradient(135deg, var(--indigo-accent) 0%, #4f46e5 100%);
+  --primary-gradient: linear-gradient(135deg, var(--indigo-accent) 0%, #2b7ad1 100%);
   --secondary-gradient: linear-gradient(135deg, var(--cyan-accent) 0%, #0891b2 100%);
   --success-gradient: linear-gradient(135deg, var(--status-online) 0%, #16a34a 100%);
   --danger-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   --dark-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  
+
   /* Layout Metrics */
   --sidebar-width: 280px;
   --thread-max-width: 800px;
-  
+
   /* Elevation Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
-  --shadow-hover: 0 10px 40px rgba(99, 102, 241, 0.2);
-  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.14);
+  --shadow-hover: 0 10px 40px rgba(51, 144, 236, 0.15);
+
   /* Radius */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
@@ -49,8 +62,86 @@
   --radius-xl: 1rem;
   --radius-2xl: 1.5rem;
   --radius-full: 9999px;
-  
+
   --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* "Day" theme — a cool sky-blue tinted light palette, visually distinct
+   from Classic's neutral gray canvas (not just a different bubble color). */
+:root[data-theme="day"] {
+  --bg-obsidian: #E8F4FC;
+  --bg-obsidian-surface: #F5FBFE;
+  --bg-obsidian-card: #FFFFFF;
+
+  --border-obsidian: #D3EAF7;
+  --border-obsidian-light: rgba(51, 144, 236, 0.08);
+
+  --bubble-sent-bg: #D2E9FB;
+  --bubble-sent-text: #14171A;
+  --bubble-read-tick: #3390EC;
+}
+
+/* "Tinted" theme — a dark, blue-tinted palette distinct from Night. */
+:root[data-theme="tinted"] {
+  --bg-obsidian: #1A2332;
+  --bg-obsidian-surface: #212F45;
+  --bg-obsidian-card: #26344A;
+
+  --border-obsidian: #37465A;
+  --border-obsidian-light: rgba(74, 111, 165, 0.25);
+
+  --indigo-accent: #4A6FA5;
+  --cyan-accent: #06B6D4;
+
+  --on-surface: #E2E8F0;
+  --on-surface-variant: #B8C4D4;
+  --text-muted: #8FA3BD;
+
+  --bubble-sent-bg: #4A6FA5;
+  --bubble-sent-text: #ffffff;
+  --bubble-received-bg: #26344A;
+  --bubble-received-text: #E2E8F0;
+  --bubble-read-tick: #7FA8E0;
+
+  --status-offline: #64748b;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
+  --shadow-hover: 0 10px 40px rgba(74, 111, 165, 0.2);
+}
+
+/* Obsidian Flux dark palette — preserved behind an explicit opt-in flag,
+   not applied automatically. Kept so a future theme toggle is cheap to add. */
+:root[data-theme="dark"] {
+  --bg-obsidian: #0B0F19;
+  --bg-obsidian-surface: #1E293B;
+  --bg-obsidian-card: #202b3e;
+
+  --border-obsidian: #334155;
+  --border-obsidian-light: rgba(51, 65, 85, 0.4);
+
+  --indigo-accent: #6366F1;
+  --cyan-accent: #06B6D4;
+  --primary-color: #cfbcff;
+  --on-primary: #381e72;
+
+  --on-surface: #e6e0e9;
+  --on-surface-variant: #cbc4d2;
+  --text-muted: #94A3B8;
+
+  --bubble-sent-bg: var(--indigo-accent);
+  --bubble-sent-text: #ffffff;
+  --bubble-received-bg: var(--bg-obsidian-surface);
+  --bubble-received-text: var(--on-surface);
+  --bubble-read-tick: #60a5fa;
+
+  --status-offline: #64748b;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
+  --shadow-hover: 0 10px 40px rgba(99, 102, 241, 0.2);
 }
 
 /* ==========================================================================
@@ -108,39 +199,9 @@ body {
   position: relative;
 }
 
-/* Sidebar Toggle for Mobile View */
-.sidebar-toggle {
-  display: none;
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 100;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--primary-gradient);
-  color: white;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  transition: var(--transition);
-  align-items: center;
-  justify-content: center;
-}
-
-.sidebar-toggle:hover {
-  transform: scale(1.05);
-}
-
-@media (max-width: 768px) {
-  .sidebar-toggle {
-    display: flex;
-  }
-}
-
 /* Sidebar Layout */
 .chat-sidebar {
+  position: relative;
   width: var(--sidebar-width);
   background-color: var(--bg-obsidian-surface);
   border-right: 1px solid var(--border-obsidian);
@@ -151,13 +212,12 @@ body {
   transition: var(--transition);
 }
 
-/* User Info Card in Sidebar */
+/* User Info Card in Sidebar — superseded by the ☰ menu button that's
+   always present instead (inline next to Search below 1000px via
+   SidebarHeader.jsx, or in FolderRail.jsx above it), so this bulkier
+   profile row is no longer shown. */
 .user-info {
-  padding: 20px;
-  background: var(--bg-obsidian-surface);
-  border-bottom: 1px solid var(--border-obsidian);
-  position: relative;
-  overflow: hidden;
+  display: none;
 }
 
 .user-info-row {
@@ -166,6 +226,7 @@ body {
   gap: 12px;
   position: relative;
   z-index: 1;
+  
 }
 
 .user-avatar {

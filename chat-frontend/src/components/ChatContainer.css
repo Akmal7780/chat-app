@@ -32,7 +32,7 @@
    ========================================================================== */
 .chat-header {
   height: 64px;
-  background: rgba(30, 41, 59, 0.8);
+  background: var(--bg-obsidian-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-obsidian);
@@ -126,6 +126,144 @@
 .user-status {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.summarize-btn,
+.call-header-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  transition: var(--transition);
+  margin-left: auto;
+}
+
+.summarize-btn:hover,
+.call-header-btn:hover {
+  background: var(--border-obsidian-light);
+  color: var(--indigo-accent);
+}
+
+/* Only the first of the header's right-aligned buttons needs the auto
+   margin — later ones sit flush next to it. */
+.call-header-btn + .summarize-btn {
+  margin-left: 0;
+}
+
+/* This button sits before .search-wrapper, which also carries margin-left:auto;
+   only the first one in DOM order needs it to push the pair to the right. */
+.summarize-btn + .search-wrapper {
+  margin-left: 0;
+}
+
+/* ==========================================================================
+   Chat Summary Modal
+   ========================================================================== */
+.summary-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.summary-modal {
+  width: 90%;
+  max-width: 440px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-obsidian-card);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.summary-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-obsidian);
+}
+
+.summary-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--on-surface);
+}
+
+.summary-modal-header button {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.summary-modal-body {
+  padding: 18px 20px;
+  color: var(--on-surface-variant);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.summary-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pinned-message-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--bg-obsidian-surface);
+  border-bottom: 1px solid var(--border-obsidian);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pinned-message-banner:hover {
+  background: var(--border-obsidian-light);
+}
+
+.pinned-message-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.pinned-message-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-message-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  transition: var(--transition);
+}
+
+.pinned-message-close:hover {
+  background: var(--border-obsidian-light);
+  color: var(--on-surface);
 }
 
 /* ==========================================================================

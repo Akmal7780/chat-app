@@ -1,23 +1,39 @@
+import secrets
+
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import AccessToken
 
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
-from allauth.socialaccount.models import SocialAccount  
 
-from django.contrib.auth import get_user_model
-from django.db.models import Prefetch
+from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth.hashers import make_password, check_password
+from django.shortcuts import get_object_or_404
 from rest_framework.pagination import PageNumberPagination
 from .models import User
-from .serializers import RegisterSerializer, UserSerializer
-from .models import UserPresence
+from .serializers import RegisterSerializer, UserSerializer, UserSessionSerializer
+from .models import UserPresence, BlockedUser, UserSession, PendingTwoFactorLogin
 from .throttles import LoginThrottle
+from . import services
 User = get_user_model()
+
+
+def _create_session(user, access_token_str, request):
+    try:
+        jti = AccessToken(access_token_str)["jti"]
+    except Exception:
+        return
+    UserSession.objects.create(
+        user=user,
+        jti=jti,
+        device=services.parse_device(request.META.get("HTTP_USER_AGENT", "")),
+        ip_address=services.get_client_ip(request),
+    )
 
 
 
@@ -56,6 +72,25 @@ class LoginView(TokenObtainPairView):
     permission_classes = [AllowAny]
     throttle_classes = [LoginThrottle]
     def post(self, request, *args, **kwargs):
+        email = request.data.get("email")
+        password = request.data.get("password")
+
+        # Two-Step Verification: if the primary password is correct AND a
+        # second password is set, stop here — issue a short-lived pending
+        # token instead of real access/refresh tokens, so the login only
+        # completes once VerifyTwoFactorAPIView confirms the second password.
+        if email and password:
+            authed_user = authenticate(request, username=email, password=password)
+            if authed_user and authed_user.two_step_password:
+                pending = PendingTwoFactorLogin.objects.create(
+                    user=authed_user, token=secrets.token_urlsafe(32)
+                )
+                return Response({
+                    "requires_2fa": True,
+                    "temp_token": pending.token,
+                    "hint": authed_user.two_step_hint,
+                }, status=200)
+
         response = super().post(request, *args, **kwargs)
 
         if response.status_code == 200:
@@ -66,8 +101,44 @@ class LoginView(TokenObtainPairView):
                     user,
                     context={"request": request}
                 ).data
+                _create_session(user, response.data["access"], request)
 
         return response
+
+
+class VerifyTwoFactorAPIView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle]
+
+    def post(self, request):
+        temp_token = request.data.get("temp_token")
+        password = request.data.get("password")
+
+        pending = PendingTwoFactorLogin.objects.filter(token=temp_token).first()
+
+        if not pending or pending.is_expired():
+            if pending:
+                pending.delete()
+            return Response({"error": "Login session expired. Please sign in again."}, status=400)
+
+        user = pending.user
+
+        if not user.two_step_password or not check_password(password, user.two_step_password):
+            return Response({"error": "Incorrect password"}, status=400)
+
+        pending.delete()
+
+        token = LoginSerializer.get_token(user)
+        access = token.access_token
+
+        session_user = UserSerializer(user, context={"request": request}).data
+        _create_session(user, str(access), request)
+
+        return Response({
+            "access": str(access),
+            "refresh": str(token),
+            "user": session_user,
+        })
 
 
 # =========================
@@ -80,35 +151,16 @@ class GoogleLogin(SocialLoginView):
         response = super().post(request, *args, **kwargs)
 
         user = self.user
-
-        if not user.username:
-            try:
-                social_account = SocialAccount.objects.get(user=user)
-                extra_data = social_account.extra_data
-
-                name = extra_data.get("name", "")
-                email = extra_data.get("email", "")
-
-                username = re.sub(r'\W+', '', name).lower()
-
-                if not username:
-                    username = email.split("@")[0]
-
-                if User.objects.filter(username=username).exists():
-                    import random
-                    username += str(random.randint(1000, 9999))
-
-                user.username = username
-                user.save()
-
-            except Exception as e:
-                print("Username error:", e)
+        services.assign_username_from_social_account(user)
 
         response.data["user"] = UserSerializer(
             user,
             context={"request": request}
         ).data
         UserPresence.objects.get_or_create(user=user)
+
+        if response.data.get("access"):
+            _create_session(user, response.data["access"], request)
 
         return response
 
@@ -172,13 +224,128 @@ class UpdateProfileView(generics.UpdateAPIView):
         avatar = self.request.FILES.get("avatar", "___missing___")
 
         if avatar == "" or self.request.data.get("avatar") == "":
-            instance = serializer.instance
-
-            if instance.avatar:
-                instance.avatar.delete(save=False)
-
-            instance.avatar = None
-            instance.save()
-
+            services.clear_avatar(serializer.instance)
         else:
             serializer.save()
+
+
+# =========================
+# BLOCK / UNBLOCK USER
+# =========================
+class BlockUserAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        if int(user_id) == request.user.id:
+            return Response({"error": "You cannot block yourself"}, status=400)
+
+        target = get_object_or_404(User, id=user_id)
+        BlockedUser.objects.get_or_create(user=request.user, blocked_user=target)
+
+        return Response(UserSerializer(target, context={"request": request}).data)
+
+    def delete(self, request, user_id):
+        target = get_object_or_404(User, id=user_id)
+        BlockedUser.objects.filter(user=request.user, blocked_user=target).delete()
+
+        return Response(UserSerializer(target, context={"request": request}).data)
+
+
+class BlockedUsersListView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        blocked_ids = BlockedUser.objects.filter(
+            user=self.request.user
+        ).values_list("blocked_user_id", flat=True)
+
+        return User.objects.filter(id__in=blocked_ids)
+
+    def get_serializer_context(self):
+        return {"request": self.request}
+
+
+# =========================
+# ACTIVE SESSIONS
+# =========================
+class SessionListView(generics.ListAPIView):
+    serializer_class = UserSessionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return UserSession.objects.filter(
+            user=self.request.user, revoked=False
+        ).order_by("-last_seen_at")
+
+    def get_serializer_context(self):
+        current_jti = self.request.auth.payload.get("jti") if self.request.auth else None
+        return {"current_jti": current_jti}
+
+
+class SessionRevokeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        session = get_object_or_404(UserSession, pk=pk, user=request.user)
+        session.revoked = True
+        session.save(update_fields=["revoked"])
+        return Response({"message": "Session terminated"})
+
+
+class LogoutAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        jti = request.auth.payload.get("jti") if request.auth else None
+        if jti:
+            UserSession.objects.filter(user=request.user, jti=jti).update(revoked=True)
+        return Response({"message": "Logged out"})
+
+
+# =========================
+# TWO-STEP VERIFICATION MANAGEMENT
+# =========================
+class TwoStepStatusAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "enabled": bool(request.user.two_step_password),
+            "hint": request.user.two_step_hint,
+            "recovery_email": request.user.two_step_recovery_email,
+        })
+
+
+class TwoStepEnableAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        password = request.data.get("password")
+
+        if not password or len(password) < 4:
+            return Response({"error": "Password must be at least 4 characters"}, status=400)
+
+        request.user.two_step_password = make_password(password)
+        request.user.two_step_hint = request.data.get("hint", "") or ""
+        request.user.two_step_recovery_email = request.data.get("recovery_email") or None
+        request.user.save(update_fields=["two_step_password", "two_step_hint", "two_step_recovery_email"])
+
+        return Response({"enabled": True})
+
+
+class TwoStepDisableAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        password = request.data.get("password")
+
+        if not request.user.two_step_password or not check_password(password, request.user.two_step_password):
+            return Response({"error": "Incorrect password"}, status=400)
+
+        request.user.two_step_password = None
+        request.user.two_step_hint = ""
+        request.user.two_step_recovery_email = None
+        request.user.save(update_fields=["two_step_password", "two_step_hint", "two_step_recovery_email"])
+
+        return Response({"enabled": False})

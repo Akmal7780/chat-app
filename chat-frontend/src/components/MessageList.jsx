@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import MessageReactions from "./MessageReactions"
+import LinkPreviewCard from "./LinkPreviewCard"
+import MessageContextMenu from "./MessageContextMenu"
+import { extractFirstUrl } from "../utils/linkify"
 import api from "../api/axios"
 import "./MessageList.css" // Import the CSS file
 
-function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, loading }) {
+function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, onForwardRequest, loading }) {
   const messagesEndRef = useRef(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [previewPDF, setPreviewPDF] = useState(null)
@@ -11,9 +14,11 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
   const clickTimeout = useRef(null)
   const processedReads = useRef(new Set())
   const observerRef = useRef(null)
-  const [activeMessage, setActiveMessage] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editingText, setEditingText] = useState("")
+  const [translations, setTranslations] = useState({})
+  const [translating, setTranslating] = useState(new Set())
 
   const getFileName = (url) => {
     if (!url) return ""
@@ -50,15 +55,17 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
   }, [messages])
 
   useEffect(() => {
-    const close = (e) => {
-      if (!e.target.closest(".message-bubble")) {
-        setActiveMessage(null)
-      }
-    }
+    if (!contextMenu) return
 
+    const close = () => setContextMenu(null)
     window.addEventListener("click", close)
-    return () => window.removeEventListener("click", close)
-  }, [])
+    window.addEventListener("scroll", close, true)
+
+    return () => {
+      window.removeEventListener("click", close)
+      window.removeEventListener("scroll", close, true)
+    }
+  }, [contextMenu])
 
   const handleEditSave = (messageId) => {
     if (!editingText.trim()) return
@@ -73,9 +80,12 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
     setEditingText("")
   }
 
-  const handleClick = (msg) => {
+  const handleClick = (msg, e) => {
+    const x = e.clientX
+    const y = e.clientY
+
     clickTimeout.current = setTimeout(() => {
-      handleMessageClick(msg)
+      handleMessageClick(msg, x, y)
     }, 250)
   }
 
@@ -119,11 +129,68 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
     }
   }, [])
 
-  // Tap message to react
-  const handleMessageClick = (msg) => {
+  // Tap message to open the Telegram-style context menu
+  const handleMessageClick = (msg, x, y) => {
     if (msg.is_deleted) return
 
-    setActiveMessage(prev => prev === msg.id ? null : msg.id)
+    setContextMenu(prev => (prev?.msgId === msg.id ? null : { msgId: msg.id, x, y }))
+  }
+
+  const handleContextMenu = (msg, e) => {
+    e.preventDefault()
+    if (msg.is_deleted) return
+
+    if (clickTimeout.current) {
+      clearTimeout(clickTimeout.current)
+    }
+
+    setContextMenu({ msgId: msg.id, x: e.clientX, y: e.clientY })
+  }
+
+  const handlePinToggle = (msg) => {
+    socket.current?.send(JSON.stringify({
+      type: msg.is_pinned ? "unpin_message" : "pin_message",
+      message_id: msg.id
+    }))
+  }
+
+  const handleReact = async (msg, emoji) => {
+    try {
+      const existing = (msg.reactions || []).find(r => r.user_id === currentUser?.id)
+
+      if (existing && existing.emoji === emoji) {
+        if (existing.id) {
+          await api.delete(`/messages/${msg.id}/reactions/${existing.id}/`)
+        }
+      } else {
+        await api.post(`/messages/${msg.id}/reactions/`, { emoji })
+      }
+    } catch (err) {
+      console.error("❌ Reaction error:", err)
+    }
+  }
+
+  const handleCopyText = (msg) => {
+    navigator.clipboard.writeText(msg.content || "")
+  }
+
+  const handleTranslate = async (msg) => {
+    setTranslating((prev) => new Set(prev).add(msg.id))
+    try {
+      const res = await api.post("/ai/translate/", {
+        message: msg.content,
+        target_language: "English",
+      })
+      setTranslations((prev) => ({ ...prev, [msg.id]: res.data.translated_text }))
+    } catch (err) {
+      console.error("❌ Translate error:", err)
+    } finally {
+      setTranslating((prev) => {
+        const next = new Set(prev)
+        next.delete(msg.id)
+        return next
+      })
+    }
   }
 
   const handleDoubleClick = (msg) => {
@@ -236,18 +303,22 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
 
   const getStatusIcon = (status) => {
     switch(status) {
-      case 'sending': return '⏳'
+      case 'sending': return '🕓'
       case 'sent': return '✓'
+      case 'delivered': return '✓✓'
       case 'read': return '✓✓'
+      case 'error': return '⚠ Not sent'
       default: return ''
     }
   }
 
   const getStatusColor = (status) => {
     switch(status) {
-      case 'read': return '#4fc3f7'
-      case 'sent': return '#a0a0a0'
-      case 'sending': return '#a0a0a0'
+      case 'read': return 'var(--bubble-read-tick)'
+      case 'sent':
+      case 'delivered':
+      case 'sending':
+        return 'inherit'
       default: return 'inherit'
     }
   }
@@ -289,6 +360,23 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
             
             const myMessage = isMyMessage(msg)
 
+            if (msg.message_type === "system") {
+              return (
+                <div key={`${msg.id}`} style={{ width: "100%" }}>
+                  {showDate && (
+                    <div className="message-list-date-divider">
+                      <span className="message-list-date-text">
+                        {formatDate(msg.created_at)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="message-list-system-pill">
+                    <span>{msg.content}</span>
+                  </div>
+                </div>
+              )
+            }
+
             return (
               <div key={`${msg.id}`} style={{ width: "100%" }}>
                 {showDate && (
@@ -298,7 +386,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                     </span>
                   </div>
                 )}
-                
+
                 <div
                   id={`message-${msg.id}`}
                   ref={el => messageRefs.current[msg.id] = el}
@@ -331,12 +419,20 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                     marginRight: myMessage ? "8px" : "0"
                   }}>
                     {/* Message bubble with click handler */}
-                    <div 
-                      className={`message-list-bubble ${myMessage ? 'my-message' : 'other-message'}`}
-                      onClick={() => handleClick(msg)}
+                    <div
+                      className={`message-list-bubble ${myMessage ? 'my-message' : 'other-message'} ${msg.is_pinned ? 'pinned' : ''}`}
+                      onClick={(e) => handleClick(msg, e)}
                       onDoubleClick={() => handleDoubleClick(msg)}
+                      onContextMenu={(e) => handleContextMenu(msg, e)}
                     >
                       <div className="message-list-content">
+                        {/* FORWARDED LABEL */}
+                        {msg.forwarded_from && (
+                          <div className="message-list-forwarded-label">
+                            ➡️ Forwarded from {msg.forwarded_from.sender_username}
+                          </div>
+                        )}
+
                         {/* REPLY PREVIEW */}
                         {msg.reply_to && msg.reply_to.content && msg.reply_to.id !== msg.id && (
                           <div
@@ -355,7 +451,32 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                           </div>
                         )}
                         
-                        {editingMessageId === msg.id ? (
+                        {msg.message_type === "call" ? (
+                          <div className="message-list-call-row">
+                            <span className="message-list-call-icon">
+                              {msg.call_is_video ? "🎥" : "📞"}
+                            </span>
+                            <div className="message-list-call-text">
+                              <span className="message-list-call-label">
+                                {msg.call_status === "completed"
+                                  ? (msg.call_is_video ? "Video call" : "Voice call")
+                                  : msg.call_status === "declined"
+                                  ? (msg.call_is_video ? "Declined video call" : "Declined call")
+                                  : myMessage
+                                  ? (msg.call_is_video ? "Canceled video call" : "Canceled call")
+                                  : (msg.call_is_video ? "Missed video call" : "Missed call")}
+                              </span>
+                              <span className="message-list-call-meta">
+                                {myMessage ? "↙" : "↗"}
+                                {msg.call_status === "completed" && msg.call_duration_seconds != null && (
+                                  <> {Math.floor(msg.call_duration_seconds / 60)}:
+                                    {String(msg.call_duration_seconds % 60).padStart(2, "0")}
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ) : editingMessageId === msg.id ? (
                           <input
                             className="message-list-edit-input"
                             value={editingText}
@@ -387,22 +508,38 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                                       edited
                                     </span>
                                   )}
+
+                                  {extractFirstUrl(msg.content) && (
+                                    <LinkPreviewCard url={extractFirstUrl(msg.content)} />
+                                  )}
+
+                                  {translating.has(msg.id) && (
+                                    <div className="message-list-translation message-list-translation-loading">
+                                      🌐 Translating…
+                                    </div>
+                                  )}
+
+                                  {translations[msg.id] && (
+                                    <div className="message-list-translation">
+                                      <span className="message-list-translation-label">🌐 Translated</span>
+                                      <span>{translations[msg.id]}</span>
+                                      <button
+                                        className="message-list-translation-close"
+                                        onClick={() =>
+                                          setTranslations((prev) => {
+                                            const next = { ...prev }
+                                            delete next[msg.id]
+                                            return next
+                                          })
+                                        }
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  )}
                                 </>
                               )}
                             </div>
-
-                            {/* DELETE BUTTON */}
-                            {myMessage && !msg.is_deleted && !msg.attachments?.some(f => f.scan_status === "infected") && (
-                              <span
-                                className="message-list-delete-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDelete(msg)
-                                }}
-                              >
-                                🗑
-                              </span>
-                            )}
                           </div>
                         )}
                         
@@ -434,6 +571,19 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                                   <div className="message-list-attachment-info">
                                     🖼 {fileName}
                                   </div>
+                                </>
+                              )}
+
+                              {/* VOICE */}
+                              {file.file_type === "voice" && (
+                                <>
+                                  <audio
+                                    controls
+                                    className="message-list-attachment-voice"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <source src={file.file_url} />
+                                  </audio>
                                 </>
                               )}
 
@@ -515,6 +665,17 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                         })}
                       </div>
 
+                      {/* Vaqt va status — inside the bubble, Telegram-style */}
+                      <div className="message-list-footer">
+                        <span>{formatTime(msg.created_at)}</span>
+
+                        {myMessage && msg.status && (
+                          <span className={`message-list-status-${msg.status}`}>
+                            {getStatusIcon(msg.status)}
+                          </span>
+                        )}
+                      </div>
+
                       {/* Quick reaction indicator on hover */}
                       {!myMessage && (
                         <div className="message-list-hint-indicator">
@@ -522,7 +683,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Reactions */}
                     {!msg.is_deleted && (
                       <MessageReactions
@@ -530,72 +691,6 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                         currentUser={currentUser}
                       />
                     )}
-
-                    {activeMessage === msg.id && (
-                      <>
-                        {/* EMOJI BAR */}
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className={`message-list-emoji-bar ${myMessage ? 'my-message' : ''}`}
-                        >
-                          {["👍","❤️","😂","😮","😢","🔥"].map(e => (
-                            <span
-                              key={e}
-                              className="message-list-emoji-option"
-                              onClick={async () => {
-                                try {
-                                  await api.post(`/messages/${msg.id}/reactions/`, {
-                                    emoji: e
-                                  })
-                                } catch (err) {
-                                  console.error(err)
-                                }
-                                setActiveMessage(null)
-                              }}
-                            >
-                              {e}
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* MENU */}
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className={`message-list-context-menu ${myMessage ? 'my-message' : ''}`}
-                        >
-                          <div
-                            className="message-list-menu-item"
-                            onClick={() => {
-                              onReply(msg)
-                              setActiveMessage(null)
-                            }}
-                          >
-                            ↩️ Reply
-                          </div>
-
-                          <div
-                            className="message-list-menu-item"
-                            onClick={() => {
-                              navigator.clipboard.writeText(msg.content)
-                              setActiveMessage(null)
-                            }}
-                          >
-                            📋 Copy
-                          </div>
-                        </div>
-                      </>
-                    )}
-                    
-                    {/* Vaqt va status */}
-                    <div className="message-list-footer">
-                      <span>{formatTime(msg.created_at)}</span>
-                      
-                      {myMessage && msg.status && (
-                        <span className={`message-list-status-${msg.status}`}>
-                          {getStatusIcon(msg.status)}
-                        </span>
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -603,6 +698,28 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
           })}
         </>
       )}
+
+      {contextMenu && (() => {
+        const targetMessage = messages.find(m => m.id === contextMenu.msgId)
+        if (!targetMessage) return null
+
+        return (
+          <MessageContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            message={targetMessage}
+            isMyMessage={isMyMessage(targetMessage)}
+            onClose={() => setContextMenu(null)}
+            onReply={onReply}
+            onCopy={handleCopyText}
+            onDelete={handleDelete}
+            onPinToggle={handlePinToggle}
+            onForward={onForwardRequest}
+            onReact={handleReact}
+            onTranslate={handleTranslate}
+          />
+        )
+      })()}
 
       {previewImage && (
         <div className="message-list-image-preview" onClick={() => setPreviewImage(null)}>

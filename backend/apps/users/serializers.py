@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import User
-from .models import UserPresence
+from .models import UserPresence, BlockedUser, UserSession
 from utils.minio import get_s3
 from django.conf import settings
 
@@ -43,6 +43,7 @@ class UserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(read_only=True)
     avatar_url = serializers.SerializerMethodField()
     last_seen = serializers.SerializerMethodField()
+    is_blocked_by_me = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -56,7 +57,14 @@ class UserSerializer(serializers.ModelSerializer):
             "last_login",
             "date_joined",
             "last_seen",
+            "is_blocked_by_me",
         ]
+
+    def get_is_blocked_by_me(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return BlockedUser.objects.filter(user=request.user, blocked_user=obj).exists()
 
     # =========================
     # AVATAR URL (MinIO 🔥)
@@ -103,3 +111,25 @@ class UserSerializer(serializers.ModelSerializer):
 
 
         return super().update(instance, validated_data)
+
+
+# =========================
+# ACTIVE SESSIONS
+# =========================
+class UserSessionSerializer(serializers.ModelSerializer):
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = [
+            "id",
+            "device",
+            "ip_address",
+            "created_at",
+            "last_seen_at",
+            "is_current",
+        ]
+
+    def get_is_current(self, obj):
+        current_jti = self.context.get("current_jti")
+        return bool(current_jti) and obj.jti == current_jti

@@ -56,6 +56,28 @@ services:
 
     restart: unless-stopped
 
+  celery-beat:
+    image: chat_app:latest
+
+    command: celery -A config beat -l info
+
+    volumes:
+      - .:/app
+
+    env_file:
+      - .env
+
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+    depends_on:
+      - redis
+      - db
+      - minio
+      - clamav
+
+    restart: unless-stopped
+
   frontend:
     image: node:20
 
@@ -132,6 +154,33 @@ services:
 
     environment:
       - CLAMAV_NO_FRESHCLAMD=false
+
+    restart: unless-stopped
+
+  # TURN/STUN relay for WebRTC calls behind strict NAT/firewalls (see
+  # apps/messaging call signaling + chat-frontend CallContext.jsx). STUN
+  # alone only helps two peers discover each other for a *direct* connection;
+  # TURN relays the actual media when a direct connection isn't possible.
+  coturn:
+    image: coturn/coturn:latest
+
+    container_name: chat_coturn
+
+    command: >
+      -n
+      --log-file=stdout
+      --lt-cred-mech
+      --realm=${TURN_REALM:-chatapp.local}
+      --user=${TURN_USERNAME:-chatuser}:${TURN_PASSWORD:-changeme}
+      --no-cli
+      --min-port=49160
+      --max-port=49200
+      --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
 
     restart: unless-stopped
 

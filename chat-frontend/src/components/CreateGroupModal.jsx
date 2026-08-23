@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react"
 import api from "../api/axios"
+import { useChats } from "../context/ChatsContext"
 
 function CreateGroupModal({ users, onClose, onCreated }) {
+  const { upsertConversation } = useChats()
   const [name, setName] = useState("")
   const [selectedUsers, setSelectedUsers] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -51,6 +53,7 @@ function CreateGroupModal({ users, onClose, onCreated }) {
         participant_ids: selectedUsers
       })
 
+      upsertConversation(res.data)
       onCreated(res.data)
       onClose()
     } catch (error) {
@@ -91,7 +94,7 @@ function CreateGroupModal({ users, onClose, onCreated }) {
   }, [name, selectedUsers])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="create-group-modal-overlay" onClick={onClose}>
       <div className="create-group-modal" onClick={e => e.stopPropagation()}>
         
         {/* Modal Header */}

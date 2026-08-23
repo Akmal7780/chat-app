@@ -29,7 +29,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
         public_url = url.replace(
             settings.AWS_S3_ENDPOINT_URL,  
-            getattr(settings, "PUBLIC_MINIO_URL", "http://localhost:9000")
+            getattr(settings, "PUBLIC_MINIO_URL", "http://localhost:9004")
         )
 
         return public_url
@@ -52,6 +52,7 @@ class MessageSerializer(serializers.ModelSerializer):
         ).data
 
     reply_to = serializers.SerializerMethodField()
+    forwarded_from = serializers.SerializerMethodField()
     reactions = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
 
@@ -67,8 +68,13 @@ class MessageSerializer(serializers.ModelSerializer):
             "attachments",
             "reactions",
             "reply_to",
+            "forwarded_from",
             "is_edited",
             "is_deleted",
+            "is_pinned",
+            "call_status",
+            "call_is_video",
+            "call_duration_seconds",
             "created_at",
             "updated_at",
             "status",
@@ -80,9 +86,21 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender_username",
             "is_edited",
             "is_deleted",
+            "is_pinned",
             "created_at",
             "updated_at",
         ]
+
+    # =========================
+    # FORWARDED FROM
+    # =========================
+    def get_forwarded_from(self, obj):
+        if obj.forwarded_from:
+            return {
+                "id": obj.forwarded_from.id,
+                "sender_username": obj.forwarded_from.sender.username,
+            }
+        return None
 
     # =========================
     # REPLY

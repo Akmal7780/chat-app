@@ -1,16 +1,28 @@
+import { useEffect, useState } from "react"
 import {BrowserRouter,Routes,Route} from "react-router-dom"
 import { Toaster } from "react-hot-toast"
 import Login from "./pages/Login"
 import Register from "./pages/Register"
 import Chat from "./pages/Chat"
+import LockScreenOverlay from "./components/LockScreenOverlay"
+import { isLocked, onLockRequested } from "./utils/localPasscode"
+import { LanguageProvider } from "./utils/i18n"
 
 function App(){
+  const [locked, setLocked] = useState(() => isLocked())
+
+  useEffect(() => onLockRequested(() => setLocked(true)), [])
+
+  if (locked) {
+    return <LockScreenOverlay onUnlocked={() => setLocked(false)} />
+  }
 
   return(
 
+    <LanguageProvider>
     <BrowserRouter>
     {/* 🔔 GLOBAL TOAST */}
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           duration: 3000
@@ -28,6 +40,7 @@ function App(){
       </Routes>
 
     </BrowserRouter>
+    </LanguageProvider>
 
   )
 }

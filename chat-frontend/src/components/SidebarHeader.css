@@ -1,0 +1,139 @@
+.sidebar-header {
+  padding: 10px 12px;
+  background: var(--bg-obsidian-surface);
+  border-bottom: 1px solid var(--border-obsidian);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-menu-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.sidebar-menu-btn:hover {
+  background: var(--border-obsidian-light);
+  color: var(--on-surface);
+}
+
+/* The folder rail (FolderRail.jsx) has its own ☰ above this width, so this
+   inline one would just be a redundant duplicate. */
+@media (min-width: 1000px) {
+  .sidebar-menu-btn {
+    display: none;
+  }
+}
+
+.sidebar-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-obsidian);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-full);
+  padding: 8px 12px;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.sidebar-search:focus-within {
+  border-color: var(--indigo-accent);
+}
+
+.sidebar-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--on-surface);
+}
+
+.sidebar-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.sidebar-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+}
+
+.sidebar-search-clear:hover {
+  color: var(--on-surface);
+}
+
+.sidebar-folder-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+/* Above this width the folder rail (FolderRail.jsx) takes over as the
+   folder switcher, so these pills would just be a redundant duplicate. */
+@media (min-width: 1000px) {
+  .sidebar-folder-tabs {
+    display: none;
+  }
+}
+
+.folder-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.folder-tab:hover {
+  background: var(--border-obsidian-light);
+  color: var(--on-surface);
+}
+
+.folder-tab.active {
+  background: var(--indigo-accent);
+  color: white;
+}
+
+.folder-tab-badge {
+  margin-left: 5px;
+  background: var(--indigo-accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.folder-tab.active .folder-tab-badge {
+  background: rgba(255, 255, 255, 0.3);
+}

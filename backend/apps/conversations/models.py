@@ -6,10 +6,12 @@ class Conversation(models.Model):
 
     PRIVATE = "private"
     GROUP = "group"
+    CHANNEL = "channel"
 
     CONVERSATION_TYPES = (
         (PRIVATE, "Private"),
         (GROUP, "Group"),
+        (CHANNEL, "Channel"),
     )
 
     id = models.BigAutoField(primary_key=True)
@@ -41,6 +43,18 @@ class Conversation(models.Model):
     )
 
     description = models.TextField(blank=True, null=True)
+
+    # Channel-only: public/private visibility + invite link slug (t.me/<slug>).
+    # Public channel discovery/search-by-slug isn't built — the slug is
+    # stored and shown in the channel info panel, but only existing
+    # members can currently open a channel, same as groups.
+    is_public = models.BooleanField(default=True)
+    invite_slug = models.SlugField(max_length=64, blank=True, null=True, unique=True)
+
+    # Messages older than this many seconds get auto-deleted by a periodic
+    # Celery task (see apps/messaging/tasks.py::auto_delete_expired_messages).
+    # Null/0 means disabled.
+    auto_delete_seconds = models.PositiveIntegerField(blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -90,6 +104,8 @@ class ConversationParticipant(models.Model):
 
     is_muted = models.BooleanField(default=False)
 
+    is_pinned = models.BooleanField(default=False)
+
     last_read_message = models.BigIntegerField(
         blank=True,
         null=True
@@ -108,3 +124,28 @@ class ConversationParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user} in {self.conversation}"
+
+
+class ChatFolder(models.Model):
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="chat_folders"
+    )
+
+    name = models.CharField(max_length=50)
+
+    conversations = models.ManyToManyField(
+        Conversation,
+        related_name="folders",
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.user})"

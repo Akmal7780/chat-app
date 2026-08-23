@@ -3,35 +3,41 @@ import toast from "react-hot-toast"
 import api from "../api/axios"
 import MessageList from "./MessageList"
 import MessageInput from "./MessageInput"
+import ForwardModal from "./ForwardModal"
 import './ChatContainer.css'
 import { useOnlineUsers } from "../context/OnlineUsersContext";
+import { useChats } from "../context/ChatsContext"
+import { useCall } from "../context/CallContext"
+import ChannelInfoModal from "./ChannelInfoModal"
+import UserInfoModal from "./UserInfoModal"
+import GroupInfoModal from "./GroupInfoModal"
+import { formatLastSeen } from "../utils/formatTime"
+import { getAvatarColor } from "../utils/avatarColor"
 
-function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser }) {
+function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users }) {
   const [replyMessage, setReplyMessage] = useState(null)
   const typingTimeoutRef = useRef(null)
   const [messages, setMessages] = useState([])
-  const notificationSocketRef = useRef(null)
+  const [forwardingMessage, setForwardingMessage] = useState(null)
   const [conversation, setConversation] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const [loading, setLoading] = useState(false)
-  const notificationCountRef = useRef({})
   const [error, setError] = useState("")
   const [typingUser, setTypingUser] = useState(null)
   const { onlineUsers, setOnlineUsers, setUsers } = useOnlineUsers();
   const socketRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
-  const [showMembers, setShowMembers] = useState(false)
-  const [groupMembers, setGroupMembers] = useState([])
+  const [showGroupInfo, setShowGroupInfo] = useState(false)
+  const [showChannelInfo, setShowChannelInfo] = useState(false)
+  const [showUserInfo, setShowUserInfo] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
+  const [summaryText, setSummaryText] = useState("")
+  const [summaryLoading, setSummaryLoading] = useState(false)
   const firstUnreadRef = useRef(null)
-  const [memberSearchTerm, setMemberSearchTerm] = useState("") 
   const [search, setSearch] = useState("")
   const [searchResults, setSearchResults] = useState([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
-  // Filter members based on search
-const filteredMembers = groupMembers.filter(member => 
-  member.username?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-)
 
 const handleSearchResultClick = (messageId) => {
   setSearch('')
@@ -51,34 +57,25 @@ const handleSearchResultClick = (messageId) => {
     }
   }, 100)
 }
+const escapeHtml = (text) =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
 const highlightText = (text, search) => {
-  if (!search || !text) return text;
+  if (!text) return text;
+  const escaped = escapeHtml(text);
+  if (!search) return escaped;
   const regex = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-  return text.replace(regex, '<mark>$1</mark>');
+  return escaped.replace(regex, '<mark>$1</mark>');
 };
-  const getAvatarColor = (name = "") => {
-  const colors = [
-    "#f44336",
-    "#e91e63",
-    "#9c27b0",
-    "#673ab7",
-    "#3f51b5",
-    "#2196f3",
-    "#009688",
-    "#4caf50",
-    "#ff9800",
-    "#795548"
-  ]
+  const { conversations, updateConversation, upsertConversation } = useChats()
+  const { openCallPrompt } = useCall()
 
-  let hash = 0
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash)
-  }
-
-  return colors[Math.abs(hash) % colors.length]
-}
-
-const conversationRef = useRef(null)
+  const conversationRef = useRef(null)
 
 useEffect(() => {
   conversationRef.current = conversation
@@ -95,137 +92,79 @@ useEffect(() => {
   }
 }, [conversation])
 
-const getIcon = (type) => {
-  if (type === "image") return "📷"
-  if (type === "file") return "📎"
-  if (type === "video") return "🎥"
-  return "💬"
-}
+  const processedReads = useRef(new Set())
+  const processedMessages = useRef(new Set())
+  const pendingMessages = useRef(new Map())
+// Builds a normalized "selected chat" target for a group member,
+// reusing an already-known private conversation with them if one exists.
+const buildMemberChatTarget = (member) => {
+  const existing = conversations.find(
+    (c) => c.type === "private" && c.other_participant?.id === member.user
+  )
 
-// 🔔 NOTIFICATION SOCKET
-useEffect(() => {
-  const token = localStorage.getItem("token")
-  if (!token) return
-
-  const ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/notifications/?token=${token}`)
-
-  notificationSocketRef.current = ws
-
-  ws.onopen = () => console.log("🔔 Notification connected")
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data)
-
-    if (data.type === "notification") {
-
-  const activeConv = conversationRef.current
-
-  if (activeConv && Number(activeConv.id) === Number(data.conversation_id)) {
-    return
-  }
-
-  const sender = data.sender
-  const key = `${sender}_${data.conversation_id}`
-
-  notificationCountRef.current[key] =
-    (notificationCountRef.current[key] || 0) + 1
-
-  const count = notificationCountRef.current[key]
-
-  toast.success(
-  <div 
-    style={{ display: "flex", flexDirection: "column", cursor: "pointer" }}
-    onClick={() => {
-  if (data.conversation_type === "group") {
-    onSelectUser({
-      id: Number(data.conversation_id),
-      name: data.sender,
-      type: "group",
-    })
-  } else {
-    onSelectUser({
-      id: data.sender_id,
-      username: data.sender,
+  if (existing) {
+    return {
+      conversationId: existing.id,
       type: "private",
-    })
-  }
-  toast.dismiss(key)
-}}
-  >
-    <span style={{ fontWeight: "bold" }}>
-      {getIcon(data.notification_type)} {data.sender}
-      {count > 1 && (
-        <span style={{
-          marginLeft: "6px",
-          background: "#ef4444",
-          color: "white",
-          borderRadius: "10px",
-          padding: "1px 7px",
-          fontSize: "12px"
-        }}>
-          {count}
-        </span>
-      )}
-    </span>
-    <span>{data.text}</span>
-  </div>,
-  { 
-    id: key,
-    duration: 4000
-  }
-)
-}
+      displayName: existing.other_participant.username,
+      avatarUrl: existing.other_participant.avatar_url,
+      otherUserId: existing.other_participant.id,
+      membersCount: null,
+      isMuted: existing.is_muted,
+      isPinned: existing.is_pinned,
+      lastSeen: existing.other_participant.last_seen,
+    }
   }
 
-  ws.onclose = () => console.log("🔌 Notification closed")
-
-  return () => {
-    ws.close()
-  }
-}, [currentUser]) 
-  
-
-  const processedReads = useRef(new Set())      
-  const processedMessages = useRef(new Set())   
-  const pendingMessages = useRef(new Map())   
-const fetchGroupMembers = async () => {
-  const convId = conversation?.id || selectedUser?.id
-  if (!convId) return
-
-  try {
-    const res = await api.get(`/conversations/${convId}/members/`)
-    setGroupMembers(res.data)
-  } catch (err) {
-    console.error("Members load error:", err)
+  return {
+    conversationId: null,
+    type: "private",
+    displayName: member.username,
+    avatarUrl: null,
+    otherUserId: member.user,
+    membersCount: null,
+    isMuted: false,
+    isPinned: false,
+    lastSeen: member.last_seen,
   }
 }
 
   useEffect(() => {
   if (!selectedUser || !currentUser) return
 
-  if (conversation?.id === selectedUser?.id) return
+  if (conversation?.id === selectedUser?.conversationId) return
 
   const initializeChat = async () => {
     setError("")
 
     try {
-      // 🔔 notification reset
-      const key = `${
-        selectedUser.type === "group"
-          ? selectedUser.name
-          : selectedUser.username
-      }_${selectedUser.id}`
-
-      notificationCountRef.current[key] = 0
-
       let conversationData = null
 
       // =========================
-      // 👥 GROUP CHAT
+      // KNOWN CONVERSATION (row clicked in ChatsList, or a notification)
       // =========================
-      if (selectedUser.type === "group") {
-        conversationData = selectedUser
+      if (selectedUser.conversationId) {
+        const known = conversations.find(c => c.id === selectedUser.conversationId)
+
+        conversationData = known || {
+          id: selectedUser.conversationId,
+          type: selectedUser.type,
+          name: selectedUser.displayName,
+        }
+
         setConversation(conversationData)
+
+        // Optimistic UI update, immediately followed by the authoritative
+        // server-side mark_read call — the per-message websocket "read"
+        // event only fires for messages that actually scroll into view,
+        // so it can't be relied on alone to persist "conversation opened"
+        // as fully read (confirmed: MessageRead rows were never created
+        // without this explicit call).
+        updateConversation(selectedUser.conversationId, { unread_count: 0 })
+
+        api.post(`/conversations/${selectedUser.conversationId}/mark_read/`)
+          .then((res) => updateConversation(selectedUser.conversationId, res.data))
+          .catch((err) => console.error("mark_read error:", err))
 
         await fetchMessages(conversationData.id)
         connectWebSocket(conversationData.id)
@@ -234,16 +173,17 @@ const fetchGroupMembers = async () => {
       }
 
       // =========================
-      // 👤 PRIVATE CHAT
+      // NEW PRIVATE CHAT (picked from "New chat" search results)
       // =========================
       const convRes = await api.post("/conversations/", {
-        participant_id: selectedUser.id,
+        participant_id: selectedUser.otherUserId,
         type: "private",
       })
 
       conversationData = convRes.data
 
       setConversation(conversationData)
+      upsertConversation(conversationData)
 
       await fetchMessages(conversationData.id)
       connectWebSocket(conversationData.id)
@@ -274,7 +214,7 @@ const fetchGroupMembers = async () => {
     firstUnreadRef.current = null
   }
 
-}, [selectedUser?.id])   
+}, [selectedUser?.conversationId, selectedUser?.otherUserId])
 
   useEffect(() => {
   const delay = setTimeout(() => {
@@ -323,8 +263,11 @@ const fetchGroupMembers = async () => {
       try {
         const data = JSON.parse(event.data)
 
-        
-      if (data.type === "message") {
+
+      if (data.type === "error") {
+        toast.error(data.message || "Something went wrong")
+      }
+      else if (data.type === "message") {
   const msg = data.data
    console.log("📨 Kelgan xabar:", msg)        
   console.log("📨 temp_id:", msg?.temp_id)    
@@ -339,6 +282,20 @@ const fetchGroupMembers = async () => {
   const normalizedMsg = {
     ...msg,
     sender_id: msg.sender_id || msg.sender,
+  }
+
+  if (conversationRef.current) {
+    updateConversation(conversationRef.current.id, {
+      last_message: {
+        id: normalizedMsg.id,
+        content: normalizedMsg.content,
+        sender_id: normalizedMsg.sender_id,
+        sender_username: normalizedMsg.sender_username,
+        created_at: normalizedMsg.created_at,
+        message_type: normalizedMsg.message_type,
+        is_deleted: normalizedMsg.is_deleted,
+      },
+    })
   }
 
  setMessages(prev => {
@@ -390,10 +347,10 @@ const fetchGroupMembers = async () => {
   })
 
   // 🔥 selectedUser update
-  if (Number(selectedUser?.id) === Number(data.user_id)) {
+  if (Number(selectedUser?.otherUserId) === Number(data.user_id)) {
     onSelectUser({
       ...selectedUser,
-      last_seen: data.last_seen
+      lastSeen: data.last_seen
     })
   }
 
@@ -509,6 +466,38 @@ else if (data.type === "file_infected") {
   )
 
   toast.error("File removed (virus detected)")
+}
+
+// 📌 MESSAGE PIN/UNPIN
+else if (data.type === "message_pin_changed") {
+  setMessages(prev =>
+    prev.map(msg =>
+      Number(msg.id) === Number(data.message_id)
+        ? { ...msg, is_pinned: data.is_pinned }
+        : msg
+    )
+  )
+}
+
+// ➡️ FORWARD RESULT (only sent back to the user who requested it)
+else if (data.type === "forward_result") {
+  if (data.success) {
+    toast.success("Message forwarded")
+
+    updateConversation(data.target_conversation_id, {
+      last_message: {
+        id: data.message.id,
+        content: data.message.content,
+        sender_id: data.message.sender,
+        sender_username: data.message.sender_username,
+        created_at: data.message.created_at,
+        message_type: data.message.message_type,
+        is_deleted: false,
+      },
+    })
+  } else {
+    toast.error(data.error || "Failed to forward message")
+  }
 }
       } catch (error) {
         console.error("❌ Error parsing message:", error)
@@ -631,7 +620,7 @@ setLoading(true)
       id: tempId,
       sender_id: currentUser.id,
       sender: currentUser.username,
-      sender_username: currentUser.sender, 
+      sender_username: currentUser.username,
       content: messageText.trim(),
       attachments: attachments,
       created_at: now,
@@ -640,12 +629,26 @@ setLoading(true)
         ? {
             id: reply.id,
             sender: reply.sender,
-            sender_id: reply.sender_id,   
+            sender_id: reply.sender_id,
             content: reply.content,
-            is_deleted: reply.is_deleted  
+            is_deleted: reply.is_deleted
           }
         : null
     }])
+
+    if (conversation) {
+      updateConversation(conversation.id, {
+        last_message: {
+          id: tempId,
+          content: messageText.trim(),
+          sender_id: currentUser.id,
+          sender_username: currentUser.username,
+          created_at: now,
+          message_type: attachments.length ? "file" : "text",
+          is_deleted: false,
+        },
+      })
+    }
 
     socketRef.current.send(JSON.stringify({
       type: "message",
@@ -691,6 +694,32 @@ setLoading(true)
   }
 
 
+  const handleSummarize = async () => {
+    setShowSummary(true)
+    setSummaryLoading(true)
+    setSummaryText("")
+
+    try {
+      const contents = messages
+        .filter((m) => !m.is_deleted && m.content?.trim())
+        .slice(-50)
+        .map((m) => `${m.sender_username || m.sender}: ${m.content}`)
+
+      if (contents.length === 0) {
+        setSummaryText("Not enough messages to summarize yet.")
+        return
+      }
+
+      const res = await api.post("/ai/summary/", { messages: contents })
+      setSummaryText(res.data.summary)
+    } catch (err) {
+      console.error("Summary error:", err)
+      setSummaryText("Failed to generate summary. Please try again.")
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
   const markAsRead = (messageId) => {
     if (!socketRef.current || !isConnected) return
     
@@ -711,20 +740,7 @@ setLoading(true)
     }
   }
 
-  // Last seen format
-  const formatLastSeen = (dateString) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diff = Math.floor((now - date) / 1000)
-
-    if (diff < 60) return "just now"
-    if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`
-    return date.toLocaleDateString()
-  }
-
-
-
+  const isSavedMessages = selectedUser?.type === "private" && selectedUser?.otherUserId === currentUser?.id
 
   if (error) {
     return (
@@ -763,37 +779,38 @@ setLoading(true)
   {selectedUser && (
     <>
       {/* Avatar */}
-      <div className="chat-avatar" 
+      <div className="chat-avatar"
         onClick={() => {
           if (selectedUser.type === "group") {
-            fetchGroupMembers()
-            setShowMembers(!showMembers)
+            setShowGroupInfo(true)
+          } else if (selectedUser.type === "channel") {
+            setShowChannelInfo(true)
+          } else if (selectedUser.type === "private" && !isSavedMessages) {
+            setShowUserInfo(true)
           }
         }}
-        style={{ cursor: selectedUser.type === "group" ? "pointer" : "default" }}>
-        {selectedUser.avatar_url || selectedUser.avatar ? (
+        style={{ cursor: (selectedUser.type === "group" || selectedUser.type === "channel" || (selectedUser.type === "private" && !isSavedMessages)) ? "pointer" : "default" }}>
+        {selectedUser.avatarUrl ? (
           <img
-            src={selectedUser.avatar_url || selectedUser.avatar}
-            alt={selectedUser.username || selectedUser.name}
+            src={selectedUser.avatarUrl}
+            alt={selectedUser.displayName}
           />
         ) : (
           <div
             className="avatar-placeholder"
             style={{
-              background: getAvatarColor(
-                selectedUser.username || selectedUser.name
-              ),
+              background: getAvatarColor(selectedUser.displayName),
             }}
           >
-            {(selectedUser.username || selectedUser.name)?.[0]?.toUpperCase()}
+            {selectedUser.displayName?.[0]?.toUpperCase()}
           </div>
         )}
 
-        {/* Online indicator faqat private chat uchun */}
-        {selectedUser.type !== "group" && (
+        {/* Online indicator faqat private chat uchun (Saved Messages bundan mustasno) */}
+        {selectedUser.type === "private" && !isSavedMessages && (
           <span
             className={`online-dot ${
-              onlineUsers.has(Number(selectedUser.id)) ? "online" : "offline"
+              onlineUsers.has(Number(selectedUser.otherUserId)) ? "online" : "offline"
             }`}
           />
         )}
@@ -802,17 +819,22 @@ setLoading(true)
       {/* Chat info */}
       <div className="chat-user-info">
         <h3 className="chat-username">
-          {selectedUser.type === "group"
-            ? selectedUser.name
-            : selectedUser.username}
+          {selectedUser.displayName}
         </h3>
 
         {/* Group chat */}
         {selectedUser.type === "group" ? (
           <div className="user-status">
-            {selectedUser.members_count} members
+            {conversation?.members_count ?? selectedUser.membersCount} members
           </div>
-        ) : /* Private chat */
+        ) : selectedUser.type === "channel" ? (
+          <div className="user-status">
+            {(() => {
+              const count = conversation?.members_count ?? selectedUser.membersCount ?? 0
+              return `${count} ${count === 1 ? "subscriber" : "subscribers"}`
+            })()}
+          </div>
+        ) : isSavedMessages ? null : /* Private chat */
         typingUser ? (
           <div className="typing-indicator">
             <span className="typing-text">Typing </span>
@@ -825,12 +847,12 @@ setLoading(true)
           </div>
         ) : (
           <div className="user-status">
-            {onlineUsers.has(Number(selectedUser.id)) ? (
+            {onlineUsers.has(Number(selectedUser.otherUserId)) ? (
               <span>Online</span>
             ) : (
               <span>
-                {selectedUser.last_seen
-                  ? `last seen ${formatLastSeen(selectedUser.last_seen)}`
+                {selectedUser.lastSeen
+                  ? `last seen ${formatLastSeen(selectedUser.lastSeen)}`
                   : "Recently"}
               </span>
             )}
@@ -839,6 +861,35 @@ setLoading(true)
       </div>
     </>
   )}
+
+  {/* Call */}
+  {selectedUser && selectedUser.type === "private" && !isSavedMessages && (
+    <button
+      className="call-header-btn"
+      onClick={() =>
+        openCallPrompt(
+          {
+            id: selectedUser.otherUserId,
+            username: selectedUser.displayName,
+            avatarUrl: selectedUser.avatarUrl,
+          },
+          selectedUser.conversationId
+        )
+      }
+      title="Call"
+    >
+      📞
+    </button>
+  )}
+
+  {/* Summarize chat */}
+  <button
+    className="summarize-btn"
+    onClick={handleSummarize}
+    title="Summarize chat"
+  >
+    ✨
+  </button>
 
   {/* MODERN SEARCH BAR - O'ng tomonda */}
   <div className="search-wrapper">
@@ -910,155 +961,95 @@ setLoading(true)
     )}
   </div>
 
-  {showMembers && selectedUser?.type === "group" && (
-    <div className="group-members-dropdown">
-      <div className="dropdown-header">
-        <div className="header-title">
-          <span className="title-icon">👥</span>
-          <h4>Group Members</h4>
-        </div>
-        <span className="members-count">{groupMembers.length} members</span>
-        <button className="close-dropdown" onClick={() => {
-          setShowMembers(false);
-          setMemberSearchTerm('');
-        }}>
+  {showChannelInfo && selectedUser?.type === "channel" && conversation && (
+    <ChannelInfoModal
+      conversation={conversation}
+      currentUser={currentUser}
+      allUsers={users}
+      onClose={() => setShowChannelInfo(false)}
+      onMuteToggled={(updated) => { setConversation(updated); updateConversation(updated.id, updated) }}
+      onUpdated={(updated) => { setConversation((prev) => ({ ...prev, ...updated })); updateConversation(conversation.id, updated) }}
+      onLeft={() => onBack?.()}
+    />
+  )}
+
+  {showUserInfo && selectedUser?.type === "private" && !isSavedMessages && conversation?.other_participant && (
+    <UserInfoModal
+      otherUser={conversation.other_participant}
+      conversationId={conversation.id}
+      autoDeleteSeconds={conversation.auto_delete_seconds}
+      isMuted={conversation.is_muted}
+      isOnline={onlineUsers.has(Number(selectedUser.otherUserId))}
+      messages={messages}
+      onClose={() => setShowUserInfo(false)}
+      onMuteToggled={(updated) => { setConversation(updated); updateConversation(updated.id, updated) }}
+      onBlockToggled={(updatedUser) => {
+        setConversation((prev) => ({ ...prev, other_participant: updatedUser }))
+      }}
+      onAutoDeleteUpdated={(updated) => { setConversation((prev) => ({ ...prev, ...updated })); updateConversation(conversation.id, updated) }}
+      onCall={() => {
+        setShowUserInfo(false)
+        openCallPrompt(
+          {
+            id: selectedUser.otherUserId,
+            username: selectedUser.displayName,
+            avatarUrl: selectedUser.avatarUrl,
+          },
+          selectedUser.conversationId
+        )
+      }}
+    />
+  )}
+
+  {showGroupInfo && selectedUser?.type === "group" && conversation && (
+    <GroupInfoModal
+      conversation={conversation}
+      currentUser={currentUser}
+      allUsers={users}
+      onlineUsers={onlineUsers}
+      onClose={() => setShowGroupInfo(false)}
+      onMuteToggled={(updated) => { setConversation(updated); updateConversation(updated.id, updated) }}
+      onUpdated={(updated) => { setConversation((prev) => ({ ...prev, ...updated })); updateConversation(conversation.id, updated) }}
+      onLeft={() => onBack?.()}
+      onSelectMember={(member) => {
+        setShowGroupInfo(false)
+        if (member.user !== currentUser.id) {
+          onSelectUser(buildMemberChatTarget(member))
+        }
+      }}
+    />
+  )}
+</div>
+
+  {/* PINNED MESSAGE BANNER */}
+  {(() => {
+    const pinned = messages.filter(m => m.is_pinned && !m.is_deleted).slice(-1)[0]
+    if (!pinned) return null
+
+    return (
+      <div
+        className="pinned-message-banner"
+        onClick={() => {
+          document.getElementById(`message-${pinned.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+        }}
+      >
+        <span className="pinned-message-icon">📌</span>
+        <span className="pinned-message-text">{pinned.content || "Attachment"}</span>
+        <button
+          className="pinned-message-close"
+          onClick={(e) => {
+            e.stopPropagation()
+            socketRef.current?.send(JSON.stringify({
+              type: "unpin_message",
+              message_id: pinned.id,
+            }))
+          }}
+        >
           ×
         </button>
       </div>
-
-      <div className="members-search">
-        <input 
-          type="text" 
-          placeholder="Search members..." 
-          className="search-input"
-          value={memberSearchTerm}
-          onChange={(e) => setMemberSearchTerm(e.target.value)}
-          autoFocus
-        />
-        <span className="search-icon">🔍</span>
-        {memberSearchTerm && (
-          <button 
-            className="clear-search"
-            onClick={() => setMemberSearchTerm('')}
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      <div className="members-list">
-        {filteredMembers.length === 0 ? (
-          <div className="no-members">
-            <span className="no-members-icon">
-              {memberSearchTerm ? '🔍' : '👥'}
-            </span>
-            <p>
-              {memberSearchTerm 
-                ? `No members matching "${memberSearchTerm}"` 
-                : 'No members found'}
-            </p>
-            {memberSearchTerm && (
-              <button 
-                className="clear-search-btn"
-                onClick={() => setMemberSearchTerm('')}
-              >
-                Clear search
-              </button>
-            )}
-          </div>
-        ) : (
-          filteredMembers.map(member => {
-            const isOnline = onlineUsers.has(Number(member.user));
-            const lastSeenText = member.last_seen ? formatLastSeen(member.last_seen) : null;
-            
-            return (
-              <div
-                key={member.id}
-                className="member-item"
-                onClick={() => {
-                  setShowMembers(false)
-                  setMemberSearchTerm('')
-                  if (member.user !== currentUser.id) {
-                    onSelectUser({
-                      id: member.user,
-                      username: member.username,
-                      type: "private",
-                      last_seen: member.last_seen
-                    })
-                  }
-                }}
-              >
-                <div className="member-avatar-wrapper">
-                  <div
-                    className="member-avatar"
-                    style={{ background: getAvatarColor(member.username) }}
-                  >
-                    {member.username[0].toUpperCase()}
-                  </div>
-                  <span className={`member-status-dot ${isOnline ? 'online' : 'offline'}`} />
-                </div>
-
-                <div className="member-details">
-                  <div className="member-name-row">
-                    <span className="member-name">{member.username}</span>
-                    {member.user === currentUser.id && (
-                      <span className="member-badge">You</span>
-                    )}
-                  </div>
-                  
-                  <div className="member-status-text">
-                    {isOnline ? (
-                      <span className="status-online">
-                        <span className="status-bullet">●</span> Online
-                      </span>
-                    ) : (
-                      <span className="status-offline">
-                        <span className="status-bullet">●</span>
-                        {lastSeenText ? `Last seen ${lastSeenText}` : 'Offline'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {member.user !== currentUser.id && (
-                  <button 
-                    className="message-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowMembers(false);
-                      setMemberSearchTerm('');
-                      onSelectUser({
-                        id: member.user,
-                        username: member.username,
-                        type: "private",
-                        last_seen: member.last_seen
-                      });
-                    }}
-                    title="Send message"
-                  >
-                    💬
-                  </button>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      <div className="dropdown-footer">
-        <button 
-          className="invite-btn" 
-          onClick={() => {
-            alert('Invite members feature coming soon!');
-          }}
-        >
-          <span className="invite-icon">➕</span>
-          Invite Members
-        </button>
-      </div>
-    </div>
-  )}
-</div>
+    )
+  })()}
 
   {/* Messages */}
   {currentUser ? (
@@ -1069,9 +1060,24 @@ setLoading(true)
       onMessageVisible={markAsRead}
       socket={socketRef}
       onReply={setReplyMessage}
+      onForwardRequest={setForwardingMessage}
     />
   ) : (
     <div className="loading-user">Loading user data...</div>
+  )}
+
+  {forwardingMessage && (
+    <ForwardModal
+      onClose={() => setForwardingMessage(null)}
+      onForward={(targetConversationId) => {
+        socketRef.current?.send(JSON.stringify({
+          type: "forward_message",
+          message_id: forwardingMessage.id,
+          target_conversation_id: targetConversationId,
+        }))
+        setForwardingMessage(null)
+      }}
+    />
   )}
 
   {/* Message Input */}
@@ -1080,6 +1086,7 @@ setLoading(true)
     isConnected={isConnected}
     onTyping={sendTypingIndicator}
     conversation={conversation}
+    messages={messages}
     currentUser={currentUser}
     replyMessage={replyMessage}     
     onCancelReply={() => setReplyMessage(null)} 
@@ -1103,6 +1110,24 @@ setLoading(true)
   })
 }}
   />
+
+  {showSummary && (
+    <div className="summary-modal-overlay" onClick={() => setShowSummary(false)}>
+      <div className="summary-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="summary-modal-header">
+          <h3>✨ Chat Summary</h3>
+          <button onClick={() => setShowSummary(false)}>×</button>
+        </div>
+        <div className="summary-modal-body">
+          {summaryLoading ? (
+            <div className="summary-loading">Summarizing…</div>
+          ) : (
+            <p>{summaryText}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )}
 
 </div>
   )

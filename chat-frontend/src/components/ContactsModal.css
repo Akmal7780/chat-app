@@ -1,0 +1,119 @@
+.contacts-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+
+.contacts-search {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-obsidian);
+}
+
+.contacts-search input {
+  width: 100%;
+  border: none;
+  background: var(--border-obsidian-light);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 13.5px;
+  color: var(--on-surface);
+}
+
+.contacts-search input:focus {
+  outline: none;
+}
+
+.contacts-list {
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.contacts-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.contacts-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.contacts-list-item:hover {
+  background: var(--border-obsidian-light);
+}
+
+.contacts-avatar {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.contacts-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.contacts-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.contacts-online-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4caf50;
+  border: 2px solid var(--bg-obsidian-card);
+}
+
+.contacts-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contacts-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.contacts-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contacts-join-hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--indigo-accent);
+}

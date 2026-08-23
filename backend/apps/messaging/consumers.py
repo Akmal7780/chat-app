@@ -1,13 +1,14 @@
+import asyncio
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from apps.notifications.models import Notification
+from apps.notifications.services import notify_conversation_participants
 from apps.messaging.serializers import MessageSerializer
 from apps.messaging.models import Message, MessageRead
 from apps.conversations.models import Conversation,ConversationParticipant
-from apps.users.models import UserPresence   # 👈 qo‘sh
+from apps.users.models import UserPresence   
 import time
 import redis
 
@@ -20,7 +21,7 @@ redis_client = redis.Redis(
 User = get_user_model()
 ONLINE_USERS = set()
 ACTIVE_USERS = {}  
-USER_CONNECTION_COUNT = {}  # {user_id: connection_count}
+USER_CONNECTION_COUNT = {}  
 class ChatConsumer(AsyncWebsocketConsumer):
     def is_rate_limited(self, *args, **kwargs):
             return False
@@ -149,13 +150,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
             allowed = {
             "message", "typing_start", "typing_stop",
             "read", "delivered", "edit_message", "delete_message",
-            "active_chat"
+            "active_chat", "pin_message", "unpin_message", "forward_message"
             }
             if event_type not in allowed:
                 return
 
             # MESSAGE SEND
             if event_type == "message":
+                if await self.is_blocked_in_conversation():
+                    await self.send(text_data=json.dumps({
+                        "type": "error",
+                        "message": "You cannot message this user."
+                    }))
+                    return
+
                 # 🔥 RATE LIMIT CHECK
                 if self.is_rate_limited(self.user.id, self.conversation_id):
                     await self.send(text_data=json.dumps({
@@ -344,6 +352,74 @@ class ChatConsumer(AsyncWebsocketConsumer):
                             "message_id": message_id,
                         }
                     )
+
+            # 📌 PIN / UNPIN MESSAGE
+            elif event_type in ("pin_message", "unpin_message"):
+                message_id = data.get("message_id")
+                if not message_id:
+                    return
+
+                pinned = event_type == "pin_message"
+                message = await self.set_message_pinned(message_id, pinned)
+
+                if message:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            "type": "message_pin_changed",
+                            "message_id": message.id,
+                            "is_pinned": pinned,
+                        }
+                    )
+
+            # ➡️ FORWARD MESSAGE
+            elif event_type == "forward_message":
+                message_id = data.get("message_id")
+                target_conversation_id = data.get("target_conversation_id")
+
+                if not message_id or not target_conversation_id:
+                    return
+
+                if not await self.is_participant_of(target_conversation_id):
+                    await self.send(text_data=json.dumps({
+                        "type": "forward_result",
+                        "success": False,
+                        "error": "You are not a participant of that conversation",
+                    }))
+                    return
+
+                new_message = await self.forward_message(message_id, target_conversation_id)
+
+                if not new_message:
+                    await self.send(text_data=json.dumps({
+                        "type": "forward_result",
+                        "success": False,
+                        "error": "Original message not found",
+                    }))
+                    return
+
+                serialized_message = await database_sync_to_async(
+                    lambda: MessageSerializer(new_message, context={"request": None}).data
+                )()
+
+                await self.channel_layer.group_send(
+                    f"chat_{target_conversation_id}",
+                    {
+                        "type": "message",
+                        "message": serialized_message
+                    }
+                )
+
+                await self.send(text_data=json.dumps({
+                    "type": "forward_result",
+                    "success": True,
+                    "target_conversation_id": target_conversation_id,
+                    "message": serialized_message,
+                }))
+
+                asyncio.create_task(
+                    self.send_notifications_background_for(new_message, target_conversation_id)
+                )
         except json.JSONDecodeError:
             print("❌ Invalid JSON received")
         except Exception as e:
@@ -468,35 +544,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "message_id": event["message_id"]
         }))
 
+    # 📌 PIN/UNPIN EVENT
+    async def message_pin_changed(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "message_pin_changed",
+            "message_id": event["message_id"],
+            "is_pinned": event["is_pinned"],
+        }))
+
     async def send_notifications_background(self, message):
-        participants = await self.get_participants()
+        await self.send_notifications_background_for(message, self.conversation_id)
 
-        for user_id in participants:
-            if user_id == self.user.id:
-                continue
+    async def send_notifications_background_for(self, message, conversation_id):
+        participants = await self.get_participants_of(conversation_id)
 
-            active_conversation = ACTIVE_USERS.get(user_id)
+        skip_user_ids = {
+            user_id for user_id in participants
+            if ACTIVE_USERS.get(user_id) == int(conversation_id)
+        }
 
-            if active_conversation != int(self.conversation_id):
-
-                notif_type, text = await self.build_notification_data(message)
-
-                # 🔥 async qilib yuboramiz
-                await self.channel_layer.group_send(
-                    f"notifications_{user_id}",
-                    {
-                        "type": "send_notification",
-                        "notification_type": notif_type,
-                        "text": text,
-                        "message_id": message.id,
-                        "conversation_id": self.conversation_id,
-                        "sender": self.user.username,
-                        "sender_id": self.user.id,
-                        "conversation_type": "private",
-                    }
-                )
-
-                await self.create_notification(user_id, message.id, notif_type, text)
+        await database_sync_to_async(notify_conversation_participants)(
+            message, skip_user_ids=skip_user_ids
+        )
 
     @database_sync_to_async
     def conversation_exists(self):
@@ -515,6 +584,35 @@ class ChatConsumer(AsyncWebsocketConsumer):
         ).exists()
         except:
             return False
+
+    @database_sync_to_async
+    def is_blocked_in_conversation(self):
+        """
+        For a private conversation, True if either side has blocked the
+        other — blocks new messages while leaving existing history visible.
+        """
+        from django.db.models import Q
+        from apps.users.models import BlockedUser
+
+        try:
+            conversation = Conversation.objects.get(id=self.conversation_id)
+        except Conversation.DoesNotExist:
+            return False
+
+        if conversation.type != Conversation.PRIVATE:
+            return False
+
+        other = ConversationParticipant.objects.filter(
+            conversation=conversation
+        ).exclude(user=self.user).first()
+
+        if not other:
+            return False
+
+        return BlockedUser.objects.filter(
+            Q(user=self.user, blocked_user=other.user) |
+            Q(user=other.user, blocked_user=self.user)
+        ).exists()
 
     @database_sync_to_async
     def save_message(self, message_text, reply_to_id=None, message_type="text"):
@@ -631,45 +729,56 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return Message.objects.get(id=message_id)
         except Message.DoesNotExist:
             return None
-    
+
     @database_sync_to_async
-    def get_participants(self):
+    def get_participants_of(self, conversation_id):
         return list(
             ConversationParticipant.objects.filter(
-                conversation_id=self.conversation_id
+                conversation_id=conversation_id
             ).values_list("user_id", flat=True)
         )
-    
+
     @database_sync_to_async
-    def build_notification_data(self, message):
-        print(f"🔔 notif type: {message.message_type}, content: {message.content}")
-        sender = message.sender.username
-
-        if message.message_type == "text":
-            return "message", f"{sender}: {message.content}"
-
-        elif message.message_type == "image":
-            return "image", f"{sender} sent a photo 📷"
-
-        elif message.message_type == "file":
-            return "file", f"{sender} sent a file 📎"
-
-        elif message.message_type == "video":
-            return "video", f"{sender} sent a video 🎥"
-
-        return "message", f"{sender} sent a message"
-    
-    @database_sync_to_async
-    def create_notification(self, user_id, message_id, notif_type, text):
+    def is_participant_of(self, conversation_id):
         try:
-            Notification.objects.create(
-                user_id=user_id,
-                message_id=message_id,
-                type=notif_type,
-                text=text
+            return ConversationParticipant.objects.filter(
+                conversation_id=conversation_id,
+                user=self.user
+            ).exists()
+        except Exception:
+            return False
+
+    @database_sync_to_async
+    def set_message_pinned(self, message_id, pinned):
+        try:
+            message = Message.objects.get(
+                id=message_id,
+                conversation_id=self.conversation_id,
+                is_deleted=False,
             )
-        except Exception as e:
-            print("❌ Notification error:", e)
+        except Message.DoesNotExist:
+            return None
+
+        message.is_pinned = pinned
+        message.save(update_fields=["is_pinned"])
+        return message
+
+    @database_sync_to_async
+    def forward_message(self, message_id, target_conversation_id):
+        try:
+            original = Message.objects.get(id=message_id, is_deleted=False)
+        except Message.DoesNotExist:
+            return None
+
+        target_conversation = Conversation.objects.get(id=target_conversation_id)
+
+        return Message.objects.create(
+            conversation=target_conversation,
+            sender=self.user,
+            message_type=original.message_type,
+            content=original.content,
+            forwarded_from=original,
+        )
     
     @database_sync_to_async
     def set_user_online(self):

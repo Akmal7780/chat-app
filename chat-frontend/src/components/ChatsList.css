@@ -1,0 +1,234 @@
+.chats-list-container {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-obsidian-surface);
+}
+
+.chats-list-section-label {
+  padding: 10px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chat-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-obsidian-light);
+  transition: var(--transition);
+}
+
+.chat-row:hover {
+  background: var(--border-obsidian-light);
+}
+
+.chat-row.active {
+  background: rgba(51, 144, 236, 0.08);
+}
+
+.chat-row.pinned {
+  background: rgba(51, 144, 236, 0.04);
+}
+
+.chat-row-pin-icon {
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.chat-row-menu-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition);
+}
+
+.chat-row:hover .chat-row-menu-btn {
+  opacity: 1;
+}
+
+.chat-row-menu-btn:hover {
+  background: var(--border-obsidian);
+  color: var(--on-surface);
+}
+
+.chat-row-menu {
+  position: absolute;
+  top: 34px;
+  right: 8px;
+  z-index: 20;
+  background: var(--bg-obsidian-card);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.chat-row-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--on-surface);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.chat-row-menu button:hover {
+  background: var(--border-obsidian-light);
+}
+
+.chat-row-avatar {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.chat-row-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+}
+
+.chat-row-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.chat-row-avatar-placeholder.group {
+  background: var(--bg-obsidian-card);
+  border: 1px solid var(--border-obsidian);
+  font-size: 20px;
+}
+
+.chat-row-status-dot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--bg-obsidian-surface);
+}
+
+.chat-row-status-dot.online {
+  background-color: var(--status-online);
+}
+
+.chat-row-status-dot.offline {
+  background-color: var(--status-offline);
+}
+
+.chat-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chat-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-row-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-row-time {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.chat-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-row-preview {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-row-muted-icon {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.chat-row-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--text-muted);
+}
+
+.chat-row-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--indigo-accent);
+  color: white;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.new-chat-row .chat-row-preview {
+  color: var(--indigo-accent);
+}
+
+.saved-messages-icon {
+  background: var(--primary-gradient);
+  font-size: 20px;
+}

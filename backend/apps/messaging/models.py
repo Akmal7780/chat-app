@@ -14,11 +14,29 @@ class Message(models.Model):
     TEXT = "text"
     IMAGE = "image"
     FILE = "file"
+    VIDEO = "video"
+    VOICE = "voice"
+    CALL = "call"
+    SYSTEM = "system"
 
     MESSAGE_TYPES = (
         (TEXT, "Text"),
         (IMAGE, "Image"),
         (FILE, "File"),
+        (VIDEO, "Video"),
+        (VOICE, "Voice"),
+        (CALL, "Call"),
+        (SYSTEM, "System"),
+    )
+
+    CALL_MISSED_OR_CANCELED = "missed_or_canceled"
+    CALL_DECLINED = "declined"
+    CALL_COMPLETED = "completed"
+
+    CALL_STATUSES = (
+        (CALL_MISSED_OR_CANCELED, "Missed or canceled"),
+        (CALL_DECLINED, "Declined"),
+        (CALL_COMPLETED, "Completed"),
     )
 
     conversation = models.ForeignKey(
@@ -49,8 +67,27 @@ class Message(models.Model):
         related_name="replies"
     )
 
+    forwarded_from = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="forwards"
+    )
+
     is_edited = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False)
+    is_pinned = models.BooleanField(default=False)
+
+    # Only set when message_type == CALL
+    call_status = models.CharField(
+        max_length=20,
+        choices=CALL_STATUSES,
+        null=True,
+        blank=True,
+    )
+    call_is_video = models.BooleanField(null=True, blank=True)
+    call_duration_seconds = models.PositiveIntegerField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

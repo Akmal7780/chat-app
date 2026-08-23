@@ -1,0 +1,18 @@
+.passcode-stars-preview {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.passcode-stars-preview span {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #4caf50;
+  border-radius: 6px;
+  color: #4caf50;
+  font-size: 14px;
+  font-weight: 700;
+}

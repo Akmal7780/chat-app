@@ -1,10 +1,23 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import UsersList from "../components/UsersList"
+import toast from "react-hot-toast"
+import ChatsList from "../components/ChatsList"
+import SidebarHeader, { useFolderTab } from "../components/SidebarHeader"
+import FolderRail from "../components/FolderRail"
+import { ChatsProvider } from "../context/ChatsContext"
+import { ConnectedCallProvider } from "../context/CallContext"
+import CallModal from "../components/CallModal"
 import ChatContainer from "../components/ChatContainer"
 import api from "../api/axios";
 import ProfileEdit from "../components/ProfileEdit"
+import SettingsModal from "../components/SettingsModal"
 import CreateGroupModal from "../components/CreateGroupModal";
+import CreateChannelModal from "../components/CreateChannelModal"
+import ContactsModal from "../components/ContactsModal"
+import PublicChannelsModal from "../components/PublicChannelsModal"
+import CallsListModal from "../components/CallsListModal"
+import { getTheme, applyTheme, isDarkFamily } from "../utils/theme"
+import { useLanguage } from "../utils/i18n"
 import "../styles/chat.css"
 
 function Chat() {
@@ -12,14 +25,47 @@ function Chat() {
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [initialLoad, setInitialLoad] = useState(true)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // The chat list is the default/main view on mobile widths (no chat open
+  // yet), so it should already be visible without needing an extra tap.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [showEdit, setShowEdit] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [showGroupModal, setShowGroupModal] = useState(false)
+  const [showContacts, setShowContacts] = useState(false)
+  const [showPublicChannels, setShowPublicChannels] = useState(false)
+  const [showCalls, setShowCalls] = useState(false)
+  const [settingsInitialView, setSettingsInitialView] = useState("main")
+  const [showChannelModal, setShowChannelModal] = useState(false)
   const [users, setUsers] = useState([])
-  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const [darkMode, setDarkMode] = useState(() => isDarkFamily(getTheme()))
+  const [searchTerm, setSearchTerm] = useState("")
+  const [folderTab, setFolderTab] = useFolderTab()
+  const { t } = useLanguage()
+
+  const toggleDarkMode = () => {
+    const next = !darkMode
+    setDarkMode(next)
+    applyTheme(next ? "dark" : "light")
+  }
 
   const navigate = useNavigate()
+
+  // Close the account/kebab dropdown (.settings-menu) when clicking
+  // anywhere outside it — it previously only closed via each menu item's
+  // own onClick, so clicking elsewhere on the page left it stuck open.
+  useEffect(() => {
+    if (!showMenu) return
+
+    const handleClickOutside = (e) => {
+      if (!e.target.closest(".settings-menu, .sidebar-menu-btn, .folder-rail-menu-btn")) {
+        setShowMenu(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [showMenu])
 
   useEffect(() => {
   const fetchUsers = async () => {
@@ -73,14 +119,73 @@ function Chat() {
     loadUser()
   }, [navigate])
 
+  // Avatar URLs are presigned S3 links that expire after ~1 hour — the
+  // cached copy in localStorage goes stale on long-running sessions, so
+  // refresh it from the server once on mount (independent of the fast
+  // localStorage-based paint above).
+  useEffect(() => {
+    if (!currentUser) return
+
+    api.get("/users/users/me/")
+      .then((res) => {
+        setCurrentUser(res.data)
+        localStorage.setItem("user", JSON.stringify(res.data))
+      })
+      .catch((err) => console.log("Current user refresh error:", err))
+  }, [currentUser?.id])
+
   const handleLogout = () => {
+    // Best-effort — revokes this device's session server-side so it no
+    // longer shows as active/usable, but we log out locally either way.
+    api.post("/users/logout/").catch(() => {})
     localStorage.clear()
     navigate("/")
   }
+
+  const openSavedMessages = async () => {
+    setShowMenu(false)
+    try {
+      const res = await api.post("/conversations/", {
+        type: "private",
+        participant_id: currentUser.id,
+      })
+      setSelectedUser({
+        conversationId: res.data.id,
+        type: "private",
+        displayName: "Saved Messages",
+        avatarUrl: null,
+        otherUserId: currentUser.id,
+        membersCount: 1,
+        isMuted: res.data.is_muted,
+        isPinned: res.data.is_pinned,
+        lastSeen: null,
+      })
+      setIsSidebarOpen(false)
+    } catch (err) {
+      console.error("Saved Messages error:", err)
+    }
+  }
+
   const handleCreateGroup = () => {
   setShowGroupModal(true)
   setShowMenu(false)
 }
+
+  const handleSelectContact = (user) => {
+    setSelectedUser({
+      conversationId: null,
+      type: "private",
+      displayName: user.username,
+      avatarUrl: user.avatar_url || user.avatar || null,
+      otherUserId: user.id,
+      membersCount: null,
+      isMuted: false,
+      isPinned: false,
+      lastSeen: user.last_seen ?? null,
+    })
+    setShowContacts(false)
+    setIsSidebarOpen(false)
+  }
 
   if (loading || initialLoad) {
     return (
@@ -111,29 +216,38 @@ function Chat() {
   currentUser.avatar_url.trim() !== ""
 
   return (
+    <ChatsProvider
+      currentUser={currentUser}
+      onNotificationClick={(chat) => {
+        setSelectedUser(chat)
+        setIsSidebarOpen(false)
+      }}
+    >
+    <ConnectedCallProvider currentUser={currentUser}>
+    <CallModal />
     <div className="chat-main">
-      
-      {/* ☰ Mobile sidebar */}
-      <button 
-        className="sidebar-toggle"
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-      >
-        ☰
-      </button>
+
+      {/* FOLDER RAIL (wide layout only — CSS media query) */}
+      <FolderRail
+        folderTab={folderTab}
+        onFolderChange={setFolderTab}
+        onOpenMenu={() => setShowMenu(!showMenu)}
+        onOpenFolders={() => { setSettingsInitialView("folders"); setShowSettings(true) }}
+      />
 
       {/* SIDEBAR */}
       <div className={`chat-sidebar ${isSidebarOpen ? 'open' : ''}`}>
         
         {/* 👤 USER INFO (CLICKABLE) */}
-        <div className="user-info glass-effect">
-          <div 
+        <div className="user-info">
+          <div
             className="user-info-row"
-            onClick={() => setShowEdit(true)}   // 🔥 PROFILE EDIT OPEN
+            onClick={() => { setSettingsInitialView("main"); setShowSettings(true) }}
             style={{ cursor: "pointer" }}
           >
             
 
-<div className="user-avatar neon-glow">
+<div className="user-avatar">
   {hasAvatar ? (
     <img src={currentUser.avatar_url} alt="avatar" />
   ) : (
@@ -152,42 +266,108 @@ function Chat() {
     className="settings-icon"
     onClick={(e) => {
       e.stopPropagation()
-      setShowMenu(!showMenu)  // Toggle qilish yaxshiroq
-      setMenuPos({
-        x: e.clientX,
-        y: e.clientY
-      })
+      setShowMenu(!showMenu)
     }}
   >
     ⋮
   </div>
-
         </div>
 
-        {/* MENUNI user-info DAN TASHQARIGA OLIB CHIQING */}
-{showMenu && (
-  <div 
-    className="settings-menu"
-    style={{
-      position: 'fixed',
-      top: menuPos.y + 10,
-      left: menuPos.x - 150,
-      zIndex: 9999
-    }}
-  >
-    <div onClick={handleCreateGroup}>+ Create Group</div>
-    <div onClick={handleLogout}>Logout</div>
-  </div>
-)}
+        {showMenu && (
+          <div className="settings-menu">
+            <div className="settings-menu-profile">
+              <div className="settings-menu-avatar">
+                {hasAvatar ? (
+                  <img src={currentUser.avatar_url} alt="avatar" />
+                ) : (
+                  <span>{currentUser?.username?.[0]?.toUpperCase() || "U"}</span>
+                )}
+              </div>
+              <div className="settings-menu-profile-info">
+                <h4>{currentUser?.username}</h4>
+                <span>{currentUser?.email}</span>
+              </div>
+            </div>
 
-        {/* USERS LIST */}
-        <UsersList
-          onSelectUser={(user) => {
-            setSelectedUser(user)
+            <div className="settings-menu-section">
+              <div onClick={() => { setSettingsInitialView("main"); setShowSettings(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">👤</span> {t("menu_myProfile")}
+              </div>
+            </div>
+
+            <div className="settings-menu-section">
+              <div onClick={handleCreateGroup}>
+                <span className="settings-menu-icon">👥</span> {t("menu_newGroup")}
+              </div>
+              <div onClick={() => { setShowChannelModal(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">📢</span> {t("menu_newChannel")}
+              </div>
+              <div onClick={() => { setShowPublicChannels(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">🔍</span> {t("menu_publicChannels")}
+              </div>
+            </div>
+
+            <div className="settings-menu-section">
+              <div onClick={() => { setShowContacts(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">👤</span> {t("menu_contacts")}
+              </div>
+              <div onClick={() => { setShowCalls(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">📞</span> {t("menu_calls")}
+              </div>
+            </div>
+
+            <div className="settings-menu-section">
+              <div onClick={openSavedMessages}>
+                <span className="settings-menu-icon">🔖</span> {t("menu_savedMessages")}
+              </div>
+              <div onClick={() => { setSettingsInitialView("main"); setShowSettings(true); setShowMenu(false) }}>
+                <span className="settings-menu-icon">⚙️</span> {t("menu_settings")}
+              </div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleDarkMode()
+                }}
+              >
+                <span className="settings-menu-icon">🌙</span> {t("menu_nightMode")}
+                <label className="settings-menu-switch" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={darkMode}
+                    onChange={toggleDarkMode}
+                  />
+                  <span className="settings-menu-switch-slider" />
+                </label>
+              </div>
+            </div>
+
+            <div className="settings-menu-section">
+              <div className="danger" onClick={handleLogout}>
+                <span className="settings-menu-icon">🚪</span> {t("menu_logout")}
+              </div>
+            </div>
+
+            <div className="settings-menu-footer">Nexus Chat</div>
+          </div>
+        )}
+
+        {/* CHATS LIST */}
+        <SidebarHeader
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          folderTab={folderTab}
+          onFolderChange={setFolderTab}
+          onOpenMenu={() => setShowMenu(!showMenu)}
+        />
+        <ChatsList
+          searchTerm={searchTerm}
+          folderTab={folderTab}
+          currentUser={currentUser}
+          selectedConversationId={selectedUser?.conversationId}
+          onSelectChat={(chat) => {
+            setSelectedUser(chat)
             setIsSidebarOpen(false)
           }}
-          currentUser={currentUser}
-          selectedUserId={selectedUser?.id}
         />
       </div>
 
@@ -195,10 +375,11 @@ function Chat() {
       <div className="chat-area">
         {selectedUser ? (
           <ChatContainer
-            key={selectedUser.id}
+            key={selectedUser.conversationId ?? `new-${selectedUser.otherUserId}`}
             selectedUser={selectedUser}
             onSelectUser={setSelectedUser}
             currentUser={currentUser}
+            users={users}
             onBack={() => {
               setSelectedUser(null)
               setIsSidebarOpen(true)
@@ -206,7 +387,7 @@ function Chat() {
           />
         ) : (
           <div className="welcome-container">
-            <div className="welcome-content glass-effect">
+            <div className="welcome-content">
               <h2>Welcome to Chat</h2>
               <p>Select a user to start messaging</p>
               <div className="badge">✨ New</div>
@@ -214,6 +395,20 @@ function Chat() {
           </div>
         )}
       </div>
+
+      {/* SETTINGS MODAL */}
+      {showSettings && (
+        <SettingsModal
+          user={currentUser}
+          initialView={settingsInitialView}
+          onClose={() => setShowSettings(false)}
+          onEditProfile={() => {
+            setShowSettings(false)
+            setShowEdit(true)
+          }}
+          onLogout={handleLogout}
+        />
+      )}
 
       {/* 🔥 PROFILE EDIT MODAL */}
       {showEdit && (
@@ -241,7 +436,65 @@ function Chat() {
 />
 )}
 
+{showContacts && (
+  <ContactsModal
+    users={users}
+    onClose={() => setShowContacts(false)}
+    onSelectContact={handleSelectContact}
+  />
+)}
+
+{showChannelModal && (
+  <CreateChannelModal
+    users={users}
+    onClose={() => setShowChannelModal(false)}
+    onCreated={(conversation) => {
+      setSelectedUser({
+        conversationId: conversation.id,
+        type: "channel",
+        displayName: conversation.name,
+        avatarUrl: conversation.avatar_url,
+        otherUserId: null,
+        membersCount: conversation.members_count,
+        isMuted: conversation.is_muted,
+        isPinned: conversation.is_pinned,
+        lastSeen: null,
+      })
+    }}
+  />
+)}
+
+{showCalls && (
+  <CallsListModal
+    users={users}
+    onClose={() => setShowCalls(false)}
+  />
+)}
+
+{showPublicChannels && (
+  <PublicChannelsModal
+    onClose={() => setShowPublicChannels(false)}
+    onJoined={(conversation) => {
+      setSelectedUser({
+        conversationId: conversation.id,
+        type: "channel",
+        displayName: conversation.name,
+        avatarUrl: conversation.avatar_url,
+        otherUserId: null,
+        membersCount: conversation.members_count,
+        isMuted: conversation.is_muted,
+        isPinned: conversation.is_pinned,
+        lastSeen: null,
+      })
+      setShowPublicChannels(false)
+      setIsSidebarOpen(false)
+    }}
+  />
+)}
+
     </div>
+    </ConnectedCallProvider>
+    </ChatsProvider>
   )
 }
 
