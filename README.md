@@ -302,7 +302,7 @@ VITE_TURN_PASSWORD=your_turn_password
 ### 💬 Rich Messaging & Menu
 
 <p align="center">
-  <img src="./screenshots/chat-features.jpg" width="700"/>
+  <img src="./screenshots/chat-features.png" width="700"/>
 </p>
 
 ---
