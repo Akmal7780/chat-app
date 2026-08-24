@@ -24,7 +24,9 @@ def scan_file_task(self, attachment_id):
         except Attachment.DoesNotExist:
             return
 
-        if attachment.file_type not in ["image", "file"]:
+        is_zip = (attachment.original_name or "").lower().endswith(".zip")
+
+        if attachment.file_type not in ["image", "file"] or is_zip:
             attachment.scan_status = "clean"
             attachment.save(update_fields=["scan_status"])
             return
@@ -135,3 +137,25 @@ def auto_delete_expired_messages():
                 )
             except Exception as e:
                 logger.error(f"Auto-delete WebSocket error: {e}")
+
+
+@shared_task
+def publish_scheduled_messages():
+    """Periodic task (see CELERY_BEAT_SCHEDULE): fires any "send later"
+    message whose time has arrived — flips off scheduled_at, stamps
+    created_at to the real send time (so it sorts correctly among messages
+    sent around it), then broadcasts + notifies exactly like a live send."""
+    from .services import _publish_message  # local import — services.py imports this module
+
+    now = timezone.now()
+    due = Message.objects.filter(
+        scheduled_at__isnull=False,
+        scheduled_at__lte=now,
+        is_deleted=False,
+    )
+
+    for message in due:
+        message.scheduled_at = None
+        message.created_at = now
+        message.save(update_fields=["scheduled_at", "created_at"])
+        _publish_message(message)

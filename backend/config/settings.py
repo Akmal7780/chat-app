@@ -70,8 +70,9 @@ INSTALLED_APPS = [
     'apps.users',
     'apps.conversations',
     'apps.messaging',
-    'apps.notifications', 
+    'apps.notifications',
     'apps.ai',
+    'apps.moderation',
 
     'rest_framework.authtoken',
 
@@ -332,6 +333,10 @@ CELERY_BEAT_SCHEDULE = {
     "auto-delete-expired-messages": {
         "task": "apps.messaging.tasks.auto_delete_expired_messages",
         "schedule": 300.0,  # every 5 minutes
+    },
+    "publish-scheduled-messages": {
+        "task": "apps.messaging.tasks.publish_scheduled_messages",
+        "schedule": 30.0,  # every 30 seconds — scheduled sends should feel timely
     },
 }
 PUBLIC_MINIO_URL = "http://localhost:9004"

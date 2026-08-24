@@ -1,5 +1,8 @@
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Count, Prefetch, Exists, OuterRef, Subquery, IntegerField
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from apps.messaging.models import Message, MessageRead
 
@@ -114,19 +117,40 @@ def set_participant_flag(user, conversation, field, value):
 
 
 def mark_conversation_read(user, conversation):
-    unread_messages = Message.objects.filter(
-        conversation=conversation,
-        is_deleted=False,
-    ).exclude(
-        sender=user,
-    ).exclude(
-        read_receipts__user=user,
+    unread_message_ids = list(
+        Message.objects.filter(
+            conversation=conversation,
+            is_deleted=False,
+        ).exclude(
+            sender=user,
+        ).exclude(
+            read_receipts__user=user,
+        ).values_list("id", flat=True)
     )
+
+    if not unread_message_ids:
+        return
 
     MessageRead.objects.bulk_create(
         [
-            MessageRead(message=message, user=user)
-            for message in unread_messages
+            MessageRead(message_id=message_id, user=user)
+            for message_id in unread_message_ids
         ],
         ignore_conflicts=True,
+    )
+
+    # bulk_create above only touches the DB — without this broadcast the
+    # sender's own tab never learns these messages were read until they
+    # reload (the per-message WS "read" event only fires for messages that
+    # scroll into view, which a bulk "mark all as read" bypasses entirely).
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"chat_{conversation.id}",
+        {
+            "type": "messages_read_bulk",
+            "message_ids": unread_message_ids,
+            "user_id": user.id,
+            "username": user.username,
+            "read_at": str(timezone.now()),
+        },
     )

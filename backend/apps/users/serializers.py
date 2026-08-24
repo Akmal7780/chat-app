@@ -58,6 +58,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "last_seen",
             "is_blocked_by_me",
+            "is_staff",
         ]
 
     def get_is_blocked_by_me(self, obj):
@@ -92,11 +93,18 @@ class UserSerializer(serializers.ModelSerializer):
     
 
     def get_last_seen(self, obj):
+        # presence.last_seen is None while the user is currently online (see
+        # set_user_online) — that's a meaningful value, not "missing", so it
+        # must NOT fall through to last_login here (an `or` would silently
+        # replace "online" with a stale old login timestamp on every request).
         try:
             presence = obj.presence
-            return presence.last_seen or obj.last_login
         except UserPresence.DoesNotExist:
             return obj.last_login or None
+
+        if presence.last_seen is None:
+            return None
+        return presence.last_seen
     
     def update(self, instance, validated_data):
         avatar_in_request = self.initial_data.get("avatar", "___missing___")

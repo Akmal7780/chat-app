@@ -1,10 +1,23 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
+from django.contrib.auth import get_user_model
+from django.utils import timezone
 from apps.notifications.models import Notification
+from apps.users.models import UserPresence
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from apps.conversations.models import ConversationParticipant
+
+User = get_user_model()
+
+# Presence lives here (not in ChatConsumer) on purpose: this socket connects
+# once per app session, the moment the user opens the app — not per-chat —
+# so "online" reflects "the app is open", matching Telegram, instead of
+# "a specific conversation happens to be open".
+ONLINE_USERS = set()
+USER_CONNECTION_COUNT = {}
+
 
 class NotificationConsumer(AsyncWebsocketConsumer):
 
@@ -26,6 +39,35 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
 
+        # 🟢 PRESENCE: this session counts as "online" for as long as the
+        # notifications socket stays connected, i.e. for the whole app
+        # session — independent of which (if any) chat is currently open.
+        await self.channel_layer.group_add("online_users", self.channel_name)
+        await self.set_user_online()
+
+        USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 0) + 1
+        ONLINE_USERS.add(self.user.id)
+
+        # Full snapshot goes ONLY to the socket that just connected, sent
+        # directly rather than via group_send — a broadcast full-list here
+        # would race with other clients' own incremental user_online/
+        # user_offline updates (Redis pub/sub gives no cross-message
+        # ordering guarantee), so a slightly-stale snapshot could arrive
+        # after and silently wipe out a more recent update on someone
+        # else's screen. Everyone else only ever gets the one-user delta.
+        await self.send(text_data=json.dumps({
+            "type": "online_users_list",
+            "users": list(ONLINE_USERS),
+        }))
+        await self.channel_layer.group_send(
+            "online_users",
+            {
+                "type": "user_online",
+                "user_id": self.user.id,
+                "username": self.user.username,
+            },
+        )
+
         # 🔥 Send initial unread count
         count = await self.get_unread_count()
         await self.send(text_data=json.dumps({
@@ -38,6 +80,53 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             self.group_name,
             self.channel_name
         )
+
+        if hasattr(self, "user") and self.user and self.user.is_authenticated:
+            USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 1) - 1
+
+            # Only actually go offline once every tab/window for this user
+            # has disconnected (mirrors the old per-conversation logic).
+            if USER_CONNECTION_COUNT.get(self.user.id, 0) <= 0:
+                USER_CONNECTION_COUNT.pop(self.user.id, None)
+                ONLINE_USERS.discard(self.user.id)
+
+                await self.update_last_seen()
+                await self.channel_layer.group_send("online_users", {
+                    "type": "user_offline",
+                    "user_id": self.user.id,
+                    "username": self.user.username,
+                    "last_seen": str(timezone.now()),
+                })
+
+            await self.channel_layer.group_discard("online_users", self.channel_name)
+
+    # 🔽 PRESENCE relay handlers (from the "online_users" broadcast group)
+    async def user_online(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "user_online",
+            "user_id": event["user_id"],
+            "username": event["username"],
+        }))
+
+    async def user_offline(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "user_offline",
+            "user_id": event["user_id"],
+            "username": event["username"],
+            "last_seen": event["last_seen"],
+        }))
+
+    @database_sync_to_async
+    def set_user_online(self):
+        presence, _ = UserPresence.objects.get_or_create(user=self.user)
+        presence.last_seen = None
+        presence.save(update_fields=["last_seen"])
+
+    @database_sync_to_async
+    def update_last_seen(self):
+        presence, _ = UserPresence.objects.get_or_create(user=self.user)
+        presence.last_seen = timezone.now()
+        presence.save(update_fields=["last_seen"])
 
     # 🔥 MAIN NOTIFICATION EVENT
     async def send_notification(self, event):

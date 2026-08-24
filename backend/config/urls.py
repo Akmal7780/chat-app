@@ -34,6 +34,7 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     path("api/", include("apps.conversations.urls")),
     path("api/", include("apps.messaging.urls")),
+    path("api/moderation/", include("apps.moderation.urls")),
 ]
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

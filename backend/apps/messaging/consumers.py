@@ -7,8 +7,8 @@ from django.contrib.auth import get_user_model
 from apps.notifications.services import notify_conversation_participants
 from apps.messaging.serializers import MessageSerializer
 from apps.messaging.models import Message, MessageRead
+from apps.messaging.services import contains_banned_word
 from apps.conversations.models import Conversation,ConversationParticipant
-from apps.users.models import UserPresence   
 import time
 import redis
 
@@ -19,9 +19,7 @@ redis_client = redis.Redis(
     decode_responses=True
 )
 User = get_user_model()
-ONLINE_USERS = set()
-ACTIVE_USERS = {}  
-USER_CONNECTION_COUNT = {}  
+ACTIVE_USERS = {}
 class ChatConsumer(AsyncWebsocketConsumer):
     def is_rate_limited(self, *args, **kwargs):
             return False
@@ -63,32 +61,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await self.accept()
         print("✅ WebSocket connected")
-        await self.set_user_online()
-        
-        await self.channel_layer.group_add(
-            "online_users",
-            self.channel_name
-        )
-        # ✅ CONNECTION COUNT 
-        USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 0) + 1
-        ONLINE_USERS.add(self.user.id)
-        
-        await self.channel_layer.group_send(
-            "online_users",
-            {
-                "type": "user_online",
-                "user_id": self.user.id,
-                "username": self.user.username
-            }
-        )
-
-        await self.channel_layer.group_send(
-            "online_users",
-            {
-                "type": "online_users_list",
-                "users": list(ONLINE_USERS)
-            }
-        )
 
         # Mark undelivered messages as delivered
         message_ids = await self.mark_messages_delivered()
@@ -107,31 +79,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
 
         print(f"🔌 WebSocket disconnected: {close_code}")
-       # ✅ CONNECTION COUNT 
-        USER_CONNECTION_COUNT[self.user.id] = USER_CONNECTION_COUNT.get(self.user.id, 1) - 1
-        
-        # ✅ Offline only when all connections are closed
-        if USER_CONNECTION_COUNT.get(self.user.id, 0) <= 0:
-            USER_CONNECTION_COUNT.pop(self.user.id, None)
-            ONLINE_USERS.discard(self.user.id)
-            
-            await self.update_last_seen()  
-            now = timezone.now()
-            await self.channel_layer.group_send("online_users", {
-                "type": "user_offline",
-                "user_id": self.user.id,
-                "username": self.user.username,
-                "last_seen": str(now)
-            })
-            await self.channel_layer.group_send("online_users", {
-                "type": "online_users_list",
-                "users": list(ONLINE_USERS)
-            })
-
-        await self.channel_layer.group_discard(
-        "online_users",
-        self.channel_name
-        )   
 
         await self.channel_layer.group_discard(
         self.room_group_name,
@@ -174,6 +121,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 temp_id = data.get("temp_id")
                 message_text = data.get("message")
                 reply_to_id = data.get("reply_to")
+
+                # 🚫 BANNED WORD FILTER
+                banned = await database_sync_to_async(contains_banned_word)(message_text)
+                if banned:
+                    await self.send(text_data=json.dumps({
+                        "type": "error",
+                        "temp_id": temp_id,
+                        "message": "Your message contains a banned word and wasn't sent."
+                    }))
+                    return
 
                 message_type = "text"
 
@@ -480,9 +437,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "read_at": event["read_at"]
         }))
 
+    # BULK READ EVENT (whole conversation marked read via REST, not
+    # per-message scroll-into-view)
+    async def messages_read_bulk(self, event):
+
+        if event["user_id"] == self.user.id:
+            return
+
+        await self.send(text_data=json.dumps({
+            "type": "messages_read_bulk",
+            "message_ids": event["message_ids"],
+            "user_id": event["user_id"],
+            "username": event["username"],
+            "read_at": event["read_at"]
+        }))
+
     # DELIVERED EVENT
     async def message_delivered(self, event):
-        
+
         if event["user_id"] == self.user.id:
             return
 
@@ -511,32 +483,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "message_id": event["message_id"],
         }))
     
-    async def online_users_list(self, event):
-
-        await self.send(text_data=json.dumps({
-            "type": "online_users_list",
-            "users": event["users"]
-        }))
-
-    async def user_online(self, event):
-        if event["user_id"] == self.user.id:
-            return
-
-        await self.send(text_data=json.dumps({
-            "type": "user_online",
-            "user_id": event["user_id"],
-            "username": event["username"]
-        }))
-    async def user_offline(self, event):
-        if event["user_id"] == self.user.id:
-            return
-
-        await self.send(text_data=json.dumps({
-            "type": "user_offline",
-            "user_id": event["user_id"],
-            "username": event["username"],
-            "last_seen": event.get("last_seen") 
-        }))
         
     async def message_deleted(self, event):
         await self.send(text_data=json.dumps({
@@ -717,21 +663,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return False
 
     @database_sync_to_async
-    def update_last_seen(self):
-        try:
-            user = User.objects.get(id=self.user.id)
-
-            presence, _ = UserPresence.objects.get_or_create(user=user)
-
-            presence.last_seen = timezone.now()
-            presence.save(update_fields=["last_seen"])
-
-            print(f"⚫ {user.username} OFFLINE at {presence.last_seen}")
-
-        except Exception as e:
-            print("❌ Last seen error:", e)
-        
-    @database_sync_to_async
     def get_message(self, message_id):
         try:
             return Message.objects.get(id=message_id)
@@ -788,17 +719,3 @@ class ChatConsumer(AsyncWebsocketConsumer):
             forwarded_from=original,
         )
     
-    @database_sync_to_async
-    def set_user_online(self):
-        try:
-            user = User.objects.get(id=self.user.id)
-
-            presence, _ = UserPresence.objects.get_or_create(user=user)
-
-            presence.last_seen = None
-            presence.save(update_fields=["last_seen"])
-
-            print(f"🟢 {user.username} is ONLINE")
-
-        except Exception as e:
-            print("❌ Online error:", e)

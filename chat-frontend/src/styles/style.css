@@ -6,11 +6,20 @@
 :root {
   /* Telegram-style Light Palette (default theme) */
   --bg-obsidian: #EEF1F4;           /* Level 0 Background Canvas */
-  --bg-obsidian-surface: #FFFFFF;   /* Level 1 Navigation / Sidebar / Header */
-  --bg-obsidian-card: #FFFFFF;      /* Level 2 Cards / Dialogs / Popups */
+  --bg-obsidian-surface: rgba(255, 255, 255, 0.72);   /* Level 1 Navigation / Sidebar / Header — translucent, sits over --bg-mesh */
+  --bg-obsidian-card: rgba(255, 255, 255, 0.86);      /* Level 2 Cards / Dialogs / Popups */
 
   --border-obsidian: #E4E7EB;       /* Subtle Border */
   --border-obsidian-light: rgba(0, 0, 0, 0.06);
+
+  /* Glassmorphism primitives — same recipe used by the auth page and
+     modals, now shared app-wide via tokens instead of one-off values. */
+  --glass-blur: blur(20px) saturate(1.8);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --bg-mesh:
+    radial-gradient(700px 520px at 8% -10%, rgba(51, 144, 236, 0.22) 0%, transparent 62%),
+    radial-gradient(600px 480px at 108% 8%, rgba(0, 184, 212, 0.18) 0%, transparent 62%),
+    radial-gradient(560px 460px at 46% 118%, rgba(168, 85, 247, 0.14) 0%, transparent 62%);
 
   --indigo-accent: #3390EC;         /* Primary Action Accent (Telegram blue) */
   --cyan-accent: #00B8D4;           /* Highlights / New affordances */
@@ -52,7 +61,7 @@
   /* Elevation Shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.14), 0 0 40px rgba(51, 144, 236, 0.05);
   --shadow-hover: 0 10px 40px rgba(51, 144, 236, 0.15);
 
   /* Radius */
@@ -70,11 +79,16 @@
    from Classic's neutral gray canvas (not just a different bubble color). */
 :root[data-theme="day"] {
   --bg-obsidian: #E8F4FC;
-  --bg-obsidian-surface: #F5FBFE;
-  --bg-obsidian-card: #FFFFFF;
+  --bg-obsidian-surface: rgba(245, 251, 254, 0.72);
+  --bg-obsidian-card: rgba(255, 255, 255, 0.88);
 
   --border-obsidian: #D3EAF7;
   --border-obsidian-light: rgba(51, 144, 236, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --bg-mesh:
+    radial-gradient(600px 460px at 8% -8%, rgba(51, 144, 236, 0.14) 0%, transparent 60%),
+    radial-gradient(520px 420px at 108% 12%, rgba(0, 184, 212, 0.10) 0%, transparent 60%),
+    radial-gradient(480px 400px at 40% 115%, rgba(99, 102, 241, 0.06) 0%, transparent 60%);
 
   --bubble-sent-bg: #D2E9FB;
   --bubble-sent-text: #14171A;
@@ -84,11 +98,16 @@
 /* "Tinted" theme — a dark, blue-tinted palette distinct from Night. */
 :root[data-theme="tinted"] {
   --bg-obsidian: #1A2332;
-  --bg-obsidian-surface: #212F45;
-  --bg-obsidian-card: #26344A;
+  --bg-obsidian-surface: rgba(33, 47, 69, 0.68);
+  --bg-obsidian-card: rgba(38, 52, 74, 0.86);
 
   --border-obsidian: #37465A;
   --border-obsidian-light: rgba(74, 111, 165, 0.25);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --bg-mesh:
+    radial-gradient(600px 460px at 8% -8%, rgba(74, 111, 165, 0.22) 0%, transparent 60%),
+    radial-gradient(520px 420px at 108% 12%, rgba(6, 182, 212, 0.12) 0%, transparent 60%),
+    radial-gradient(480px 400px at 40% 115%, rgba(139, 92, 246, 0.10) 0%, transparent 60%);
 
   --indigo-accent: #4A6FA5;
   --cyan-accent: #06B6D4;
@@ -107,7 +126,7 @@
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 50px rgba(74, 111, 165, 0.1);
   --shadow-hover: 0 10px 40px rgba(74, 111, 165, 0.2);
 }
 
@@ -115,11 +134,16 @@
    not applied automatically. Kept so a future theme toggle is cheap to add. */
 :root[data-theme="dark"] {
   --bg-obsidian: #0B0F19;
-  --bg-obsidian-surface: #1E293B;
-  --bg-obsidian-card: #202b3e;
+  --bg-obsidian-surface: rgba(30, 41, 59, 0.6);
+  --bg-obsidian-card: rgba(32, 43, 62, 0.82);
 
   --border-obsidian: #334155;
   --border-obsidian-light: rgba(51, 65, 85, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --bg-mesh:
+    radial-gradient(650px 500px at 12% -5%, rgba(99, 102, 241, 0.22) 0%, transparent 60%),
+    radial-gradient(550px 450px at 105% 15%, rgba(168, 85, 247, 0.16) 0%, transparent 60%),
+    radial-gradient(500px 400px at 50% 115%, rgba(56, 189, 248, 0.10) 0%, transparent 60%);
 
   --indigo-accent: #6366F1;
   --cyan-accent: #06B6D4;
@@ -140,7 +164,7 @@
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 60px rgba(99, 102, 241, 0.12);
   --shadow-hover: 0 10px 40px rgba(99, 102, 241, 0.2);
 }
 
@@ -195,6 +219,7 @@ body {
   display: flex;
   height: 100vh;
   background-color: var(--bg-obsidian);
+  background-image: var(--bg-mesh);
   overflow: hidden;
   position: relative;
 }
@@ -204,6 +229,8 @@ body {
   position: relative;
   width: var(--sidebar-width);
   background-color: var(--bg-obsidian-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-right: 1px solid var(--border-obsidian);
   display: flex;
   flex-direction: column;
@@ -562,7 +589,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--bg-obsidian);
+  background-color: transparent;
   position: relative;
   overflow: hidden;
 }

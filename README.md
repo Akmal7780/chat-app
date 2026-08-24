@@ -23,8 +23,10 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * Rich-text formatting (**bold**, *italic*, `inline code`, auto-linked URLs) with a selection-triggered formatting toolbar
 * @mention autocomplete with highlighting and a notification that bypasses mute
 * Per-conversation message drafts, restored automatically when you switch back
+* Schedule a message to send later — pick a date & time; it stays hidden from everyone else in the chat until a Celery Beat task auto-publishes it at the right moment (with "Send now" / "Cancel" from a dedicated scheduled-messages panel)
 * Per-message **AI translate** button + language preference toggle
 * Full-text message search within a conversation (XSS-safe highlighting)
+* Global search — find a message across every conversation from the sidebar search box, jump straight to it in context
 * **AI-powered chat search** — ask a natural-language question and get an answer grounded in that conversation's history (DeepSeek)
 * **Polls** — single- or multiple-choice, quiz mode with a post-vote correct-answer reveal, anonymous voting, participant-added options, revoting on/off, shuffled option order, and time-limited polls, all synced live over WebSocket
 * Auto-delete messages after a configurable interval (Celery Beat periodic task)
@@ -37,6 +39,8 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * Public channel discovery — search and join open channels
 * Custom folders — create, delete, and assign chats/channels to a folder
 * Chat header quick-actions menu — mute/unmute, view group/channel info, manage (admin-gated), create a poll, export chat history, report the chat to moderators, clear your own local history, leave
+* Per-message reporting to moderators, plus a server-side banned-word filter that rejects a message before it's ever saved
+* In-app moderation panel (staff-only) — review and resolve message/conversation reports, delete a reported message, manage the banned-word list, all without touching Django admin
 
 ### 📞 Calls
 * 1:1 audio & video calls over WebRTC
@@ -50,7 +54,7 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * **Active Sessions** — real per-device session list with instant, server-side token revocation (REST *and* WebSocket)
 * **Local Passcode** — client-side 4-digit PIN app lock (SHA-256, never leaves the device)
 * Real user blocking, enforced server-side on both conversation creation and message send
-* Antivirus scanning of every uploaded file via **ClamAV** (fails closed if the scanner is unreachable)
+* Antivirus scanning via **ClamAV** for images and other unknown/small files (fails closed if the scanner is unreachable); videos and `.zip` archives skip the scan by design, and dangerous executable extensions (`.exe`, `.bat`, `.sh`, ...) are rejected outright before any bytes are uploaded
 * Rate limiting (DRF throttling) on login, 2FA verification, messaging, and uploads
 * `DEBUG` and `ALLOWED_HOSTS` are environment-driven, not hardcoded, so a misconfigured deploy can't accidentally ship debug mode
 * Server-enforced total upload size cap (`MAX_UPLOAD_SIZE_MB`), independent of any client-side check
@@ -121,7 +125,7 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * Django REST Framework handles all business-logic HTTP endpoints
 * Django Channels manages WebSocket connections (chat, calls, notifications)
 * Redis backs both the Channels layer and the Celery task queue
-* Celery + Celery Beat run background jobs — virus scanning, auto-delete of expired messages
+* Celery + Celery Beat run background jobs — virus scanning, auto-delete of expired messages, publishing scheduled ("send later") messages
 * MinIO stores all uploaded files; ClamAV scans each one before it's served
 * coturn provides a real relay path for calls when a direct/STUN connection isn't possible
 
@@ -339,7 +343,6 @@ VITE_TURN_PASSWORD=your_turn_password
 
 * 🎙️ Voice-message-to-text transcription (blocked on a paid STT API key — DeepSeek doesn't support audio)
 * 👥 Group video calls (currently 1:1 only — needs a mesh/SFU architecture)
-* 🛡️ Full admin moderation console (a banned-word filter, plus a review UI for the reports the app already collects)
 * 📱 Native mobile app (React Native)
 * 🌍 Additional UI languages beyond English/Russian
 

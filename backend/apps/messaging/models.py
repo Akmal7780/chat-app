@@ -81,6 +81,12 @@ class Message(models.Model):
     is_deleted = models.BooleanField(default=False)
     is_pinned = models.BooleanField(default=False)
 
+    # Set only for a "send later" message — while in the future, the
+    # message is invisible to everyone except the sender (see
+    # MessageViewSet.get_queryset). A Celery Beat task publishes it once
+    # this time passes (see tasks.publish_scheduled_messages).
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+
     # Only set when message_type == CALL
     call_status = models.CharField(
         max_length=20,
@@ -93,6 +99,11 @@ class Message(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["scheduled_at"]),
+        ]
 
     def __str__(self):
         return f"Message {self.id} from {self.sender}"
@@ -307,3 +318,46 @@ class PollVote(models.Model):
 
     def __str__(self):
         return f"{self.user} voted for {self.option_id}"
+
+
+class MessageReport(models.Model):
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="reports"
+    )
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="message_reports"
+    )
+
+    reason = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["resolved"]),
+        ]
+
+    def __str__(self):
+        return f"Report on message {self.message_id} by {self.reporter}"
+
+
+class BannedWord(models.Model):
+
+    word = models.CharField(max_length=100, unique=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="banned_words_added"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.word

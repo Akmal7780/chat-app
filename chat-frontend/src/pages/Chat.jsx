@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import toast from "react-hot-toast"
 import ChatsList from "../components/ChatsList"
@@ -16,6 +16,7 @@ import CreateChannelModal from "../components/CreateChannelModal"
 import ContactsModal from "../components/ContactsModal"
 import PublicChannelsModal from "../components/PublicChannelsModal"
 import CallsListModal from "../components/CallsListModal"
+import ModerationPanel from "../components/ModerationPanel"
 import { getTheme, applyTheme, isDarkFamily } from "../utils/theme"
 import { useLanguage } from "../utils/i18n"
 import "../styles/chat.css"
@@ -35,6 +36,7 @@ function Chat() {
   const [showContacts, setShowContacts] = useState(false)
   const [showPublicChannels, setShowPublicChannels] = useState(false)
   const [showCalls, setShowCalls] = useState(false)
+  const [showModeration, setShowModeration] = useState(false)
   const [settingsInitialView, setSettingsInitialView] = useState("main")
   const [showChannelModal, setShowChannelModal] = useState(false)
   const [users, setUsers] = useState([])
@@ -48,6 +50,16 @@ function Chat() {
     setDarkMode(next)
     applyTheme(next ? "dark" : "light")
   }
+
+  // Stable reference — ChatsProvider's notification-socket effect depends
+  // on this prop, so a new function identity on every render (an inline
+  // arrow here) was tearing down and reconnecting that websocket on every
+  // single re-render of this page, which made presence/online-status
+  // updates flaky (missed broadcasts during the constant reconnect churn).
+  const handleNotificationClick = useCallback((chat) => {
+    setSelectedUser(chat)
+    setIsSidebarOpen(false)
+  }, [])
 
   const navigate = useNavigate()
 
@@ -218,10 +230,7 @@ function Chat() {
   return (
     <ChatsProvider
       currentUser={currentUser}
-      onNotificationClick={(chat) => {
-        setSelectedUser(chat)
-        setIsSidebarOpen(false)
-      }}
+      onNotificationClick={handleNotificationClick}
     >
     <ConnectedCallProvider currentUser={currentUser}>
     <CallModal />
@@ -315,6 +324,14 @@ function Chat() {
                 <span className="settings-menu-icon">📞</span> {t("menu_calls")}
               </div>
             </div>
+
+            {currentUser?.is_staff && (
+              <div className="settings-menu-section">
+                <div onClick={() => { setShowModeration(true); setShowMenu(false) }}>
+                  <span className="settings-menu-icon">🛡️</span> Moderation
+                </div>
+              </div>
+            )}
 
             <div className="settings-menu-section">
               <div onClick={openSavedMessages}>
@@ -469,6 +486,10 @@ function Chat() {
     users={users}
     onClose={() => setShowCalls(false)}
   />
+)}
+
+{showModeration && (
+  <ModerationPanel onClose={() => setShowModeration(false)} />
 )}
 
 {showPublicChannels && (

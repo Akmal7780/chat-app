@@ -840,8 +840,10 @@
   display: flex;
   flex-direction: column;
   background: var(--bg-obsidian-card);
-  border: 1px solid var(--border-obsidian);
-  border-radius: var(--radius-lg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
 }
 

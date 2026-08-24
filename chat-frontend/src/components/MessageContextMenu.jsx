@@ -17,6 +17,7 @@ function MessageContextMenu({
   onForward,
   onReact,
   onTranslate,
+  onReport,
 }) {
   const canTranslate = getLanguagePrefs().showTranslateButton &&
     message.message_type === "text" && message.content?.trim() && !message.is_deleted
@@ -91,6 +92,18 @@ function MessageContextMenu({
             }}
           >
             <span className="message-context-icon">🌐</span> Translate
+          </button>
+        )}
+
+        {!isMyMessage && (
+          <button
+            className="danger"
+            onClick={() => {
+              onReport(message)
+              onClose()
+            }}
+          >
+            <span className="message-context-icon">⚠️</span> Report
           </button>
         )}
 

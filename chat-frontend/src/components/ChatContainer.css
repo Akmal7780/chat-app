@@ -8,6 +8,7 @@
   flex-direction: column;
   height: 100%;
   background-color: var(--bg-obsidian);
+  background-image: var(--bg-mesh);
   position: relative;
   overflow: hidden;
 }
@@ -185,15 +186,15 @@
 }
 
 .chat-header-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
   min-width: 210px;
   max-height: 70vh;
   overflow-y: auto;
   background: var(--bg-obsidian-card);
-  border: 1px solid var(--border-obsidian);
-  border-radius: var(--radius-md);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 6px;
   z-index: 2000;
@@ -224,6 +225,50 @@
   color: #ef4444;
 }
 
+.scheduled-message-card {
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--border-obsidian-light);
+}
+
+.scheduled-message-content {
+  font-size: 13.5px;
+  color: var(--on-surface);
+  word-break: break-word;
+}
+
+.scheduled-message-meta {
+  font-size: 11.5px;
+  color: var(--indigo-accent);
+  font-weight: 600;
+}
+
+.scheduled-message-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.scheduled-message-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-obsidian-card);
+  color: var(--on-surface);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scheduled-message-actions button.danger {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
 /* ==========================================================================
    Chat Summary Modal
    ========================================================================== */
@@ -244,8 +289,10 @@
   max-height: 70vh;
   overflow-y: auto;
   background: var(--bg-obsidian-card);
-  border: 1px solid var(--border-obsidian);
-  border-radius: var(--radius-lg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
 }
 

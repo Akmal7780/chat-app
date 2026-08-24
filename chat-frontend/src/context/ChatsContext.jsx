@@ -3,6 +3,7 @@ import toast from "react-hot-toast"
 import api from "../api/axios"
 import { getNotificationPrefs } from "../utils/notificationPrefs"
 import { showDesktopNotification, playNotificationSound, flashTitle } from "../utils/notify"
+import { useOnlineUsers } from "./OnlineUsersContext"
 
 const ChatsContext = createContext()
 
@@ -17,14 +18,25 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [folders, setFolders] = useState([])
+  const { setOnlineUsers } = useOnlineUsers()
   const notificationSocketRef = useRef(null)
   const notificationCountRef = useRef({})
   const conversationsRef = useRef([])
   const callSignalListenersRef = useRef(new Set())
+  const presenceListenersRef = useRef(new Set())
 
   const subscribeCallSignals = useCallback((listener) => {
     callSignalListenersRef.current.add(listener)
     return () => callSignalListenersRef.current.delete(listener)
+  }, [])
+
+  // Lets a component (e.g. ChatContainer, to refresh a DM header's
+  // "last seen X ago" text) react to presence events without owning a
+  // websocket itself — the single notifications socket below is the only
+  // one that ever receives them now.
+  const subscribePresence = useCallback((listener) => {
+    presenceListenersRef.current.add(listener)
+    return () => presenceListenersRef.current.delete(listener)
   }, [])
 
   useEffect(() => {
@@ -133,6 +145,28 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
 
       if (CALL_SIGNAL_TYPES.has(data.type)) {
         callSignalListenersRef.current.forEach((listener) => listener(data))
+        return
+      }
+
+      // Presence — this socket connects the moment the app opens (not per
+      // conversation), so online status now tracks "is the app open" like
+      // Telegram, instead of "is this specific chat open".
+      if (data.type === "online_users_list") {
+        setOnlineUsers(new Set(data.users.map(Number)))
+        return
+      }
+      if (data.type === "user_online") {
+        setOnlineUsers((prev) => new Set([...prev, Number(data.user_id)]))
+        presenceListenersRef.current.forEach((listener) => listener(data))
+        return
+      }
+      if (data.type === "user_offline") {
+        setOnlineUsers((prev) => {
+          const updated = new Set(prev)
+          updated.delete(Number(data.user_id))
+          return updated
+        })
+        presenceListenersRef.current.forEach((listener) => listener(data))
         return
       }
 
@@ -268,6 +302,7 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
         toggleConversationInFolder,
         sendCallSignal,
         subscribeCallSignals,
+        subscribePresence,
       }}
     >
       {children}

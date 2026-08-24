@@ -81,6 +81,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "status",
+            "scheduled_at",
         ]
 
         read_only_fields = [
@@ -89,6 +90,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender_username",
             "is_edited",
             "is_deleted",
+            "scheduled_at",
             "is_pinned",
             "created_at",
             "updated_at",
@@ -149,19 +151,22 @@ class MessageSerializer(serializers.ModelSerializer):
         my_voted_option_ids = set()
 
         for option in poll.options.all():
-            all_voter_ids = list(option.votes.values_list("user_id", flat=True))
+            voters = list(option.votes.values("user_id", "user__username"))
+            all_voter_ids = [v["user_id"] for v in voters]
             total_votes += len(all_voter_ids)
             if requesting_user_id in all_voter_ids:
                 my_voted_option_ids.add(option.id)
+            # Anonymous polls only reveal the requesting user's own vote,
+            # never other participants' identities.
+            visible_voters = (
+                [v for v in voters if v["user_id"] == requesting_user_id] if poll.anonymous else voters
+            )
             options.append({
                 "id": option.id,
                 "text": option.text,
                 "vote_count": len(all_voter_ids),
-                # Anonymous polls only reveal the requesting user's own vote,
-                # never other participants' identities.
-                "voter_ids": (
-                    [requesting_user_id] if requesting_user_id in all_voter_ids else []
-                ) if poll.anonymous else all_voter_ids,
+                "voter_ids": [v["user_id"] for v in visible_voters],
+                "voters": [{"id": v["user_id"], "username": v["user__username"]} for v in visible_voters],
                 "added_by": option.added_by_id,
             })
 
@@ -185,7 +190,10 @@ class MessageSerializer(serializers.ModelSerializer):
             "allow_revoting": poll.allow_revoting,
             "shuffle_options": poll.shuffle_options,
             "quiz_mode": poll.quiz_mode,
-            "closes_at": poll.closes_at,
+            # SerializerMethodField output bypasses DRF's normal field
+            # serialization, so a raw datetime here would crash the WS
+            # channel layer (msgpack can't encode datetime objects).
+            "closes_at": poll.closes_at.isoformat() if poll.closes_at else None,
             "total_votes": total_votes,
             "options": options,
         }

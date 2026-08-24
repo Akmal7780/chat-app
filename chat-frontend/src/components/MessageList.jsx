@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import toast from "react-hot-toast"
 import MessageReactions from "./MessageReactions"
 import LinkPreviewCard from "./LinkPreviewCard"
 import MessageContextMenu from "./MessageContextMenu"
@@ -81,9 +83,18 @@ function PollBlock({ message, currentUser }) {
 
   const handleVote = async (optionId) => {
     if (voting || locked) return
+    // Multi-choice polls toggle within the full set of options I've already
+    // picked — a single-option payload would silently wipe out the rest
+    // (vote_poll replaces the caller's whole vote set on every call).
+    const optionIds = poll.allows_multiple
+      ? (myVotes.has(optionId)
+          ? [...myVotes].filter((id) => id !== optionId)
+          : [...myVotes, optionId])
+      : [optionId]
+    if (poll.allows_multiple && optionIds.length === 0) return
     setVoting(true)
     try {
-      await api.post(`/messages/${message.id}/vote/`, { option_ids: [optionId] })
+      await api.post(`/messages/${message.id}/vote/`, { option_ids: optionIds })
     } catch (err) {
       console.error("Vote error:", err)
     } finally {
@@ -124,22 +135,31 @@ function PollBlock({ message, currentUser }) {
                 ? "incorrect"
                 : ""
             : ""
+          const voterNames = (option.voters || []).map((v) => v.username)
+          const showVoters = hasVoted && !poll.anonymous && voterNames.length > 0
           return (
-            <button
-              key={option.id}
-              className={`message-list-poll-option ${isMine ? "voted" : ""} ${quizClass}`}
-              onClick={(e) => { e.stopPropagation(); handleVote(option.id) }}
-              disabled={voting || locked}
-            >
-              {hasVoted && (
-                <div className="message-list-poll-option-bar" style={{ width: `${percent}%` }} />
+            <div key={option.id} className="message-list-poll-option-wrap">
+              <button
+                className={`message-list-poll-option ${isMine ? "voted" : ""} ${quizClass}`}
+                onClick={(e) => { e.stopPropagation(); handleVote(option.id) }}
+                disabled={voting || locked}
+              >
+                {hasVoted && (
+                  <div className="message-list-poll-option-bar" style={{ width: `${percent}%` }} />
+                )}
+                <span className="message-list-poll-option-text">
+                  {revealCorrect ? (option.is_correct ? "✅ " : isMine ? "❌ " : "") : isMine ? "✓ " : ""}
+                  {option.text}
+                </span>
+                {hasVoted && <span className="message-list-poll-option-percent">{percent}%</span>}
+              </button>
+              {showVoters && (
+                <div className="message-list-poll-option-voters">
+                  👤 {voterNames.slice(0, 3).join(", ")}
+                  {voterNames.length > 3 ? ` +${voterNames.length - 3} more` : ""}
+                </div>
               )}
-              <span className="message-list-poll-option-text">
-                {revealCorrect ? (option.is_correct ? "✅ " : isMine ? "❌ " : "") : isMine ? "✓ " : ""}
-                {option.text}
-              </span>
-              {hasVoted && <span className="message-list-poll-option-percent">{percent}%</span>}
-            </button>
+            </div>
           )
         })}
       </div>
@@ -180,6 +200,9 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
   const processedReads = useRef(new Set())
   const observerRef = useRef(null)
   const [contextMenu, setContextMenu] = useState(null)
+  const [reportTarget, setReportTarget] = useState(null)
+  const [reportReason, setReportReason] = useState("")
+  const [reportSubmitting, setReportSubmitting] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [editingText, setEditingText] = useState("")
   const [translations, setTranslations] = useState({})
@@ -206,6 +229,15 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
 
     if (mb >= 1) return mb.toFixed(1) + " MB"
     return kb.toFixed(1) + " KB"
+  }
+
+  // Browsers only decode a handful of video containers natively (no AVI,
+  // WMV, MKV, FLV support) — for anything else <video> would just render
+  // a black, unplayable box, so those get a download link instead.
+  const WEB_PLAYABLE_VIDEO_EXT = new Set(["mp4", "webm", "ogg", "ogv"])
+  const isWebPlayableVideo = (name) => {
+    const ext = (name || "").split(".").pop()?.toLowerCase()
+    return WEB_PLAYABLE_VIDEO_EXT.has(ext)
   }
 
   // Automatically scroll to bottom
@@ -337,6 +369,26 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
 
   const handleCopyText = (msg) => {
     navigator.clipboard.writeText(msg.content || "")
+  }
+
+  const handleReportSubmit = async () => {
+    const reason = reportReason.trim()
+    if (!reason) {
+      toast.error("Please describe the issue")
+      return
+    }
+    setReportSubmitting(true)
+    try {
+      await api.post(`/messages/${reportTarget.id}/report/`, { reason })
+      setReportTarget(null)
+      setReportReason("")
+      toast.success("Report submitted")
+    } catch (err) {
+      console.error("Report message error:", err)
+      toast.error("Failed to submit report")
+    } finally {
+      setReportSubmitting(false)
+    }
   }
 
   const handleTranslate = async (msg) => {
@@ -757,14 +809,26 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                               {/* VIDEO */}
                               {file.file_type === "video" && (
                                 <>
-                                  <video
-                                    width="220"
-                                    controls
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="message-list-attachment-video"
-                                  >
-                                    <source src={file.file_url} />
-                                  </video>
+                                  {isWebPlayableVideo(fileName) ? (
+                                    <video
+                                      width="220"
+                                      controls
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="message-list-attachment-video"
+                                    >
+                                      <source src={file.file_url} />
+                                    </video>
+                                  ) : (
+                                    <a
+                                      href={file.file_url}
+                                      download={fileName}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="message-list-attachment-unplayable"
+                                    >
+                                      <span className="message-list-attachment-unplayable-icon">🎬⬇️</span>
+                                      <span>This format can't be played here — click to download</span>
+                                    </a>
+                                  )}
                                   <div className="message-list-attachment-info">
                                     🎥 {fileName}
                                   </div>
@@ -834,12 +898,19 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
 
                       {/* Vaqt va status — inside the bubble, Telegram-style */}
                       <div className="message-list-footer">
-                        <span>{formatTime(msg.created_at)}</span>
-
-                        {myMessage && msg.status && (
-                          <span className={`message-list-status-${msg.status}`}>
-                            {getStatusIcon(msg.status)}
+                        {msg.scheduled_at ? (
+                          <span className="message-list-scheduled-badge">
+                            🕒 Scheduled for {new Date(msg.scheduled_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                           </span>
+                        ) : (
+                          <>
+                            <span>{formatTime(msg.created_at)}</span>
+                            {myMessage && msg.status && (
+                              <span className={`message-list-status-${msg.status}`}>
+                                {getStatusIcon(msg.status)}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
 
@@ -884,9 +955,41 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
             onForward={onForwardRequest}
             onReact={handleReact}
             onTranslate={handleTranslate}
+            onReport={(msg) => { setReportReason(""); setReportTarget(msg) }}
           />
         )
       })()}
+
+      {reportTarget && createPortal(
+        <div className="poll-modal-overlay" onClick={() => setReportTarget(null)}>
+          <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="poll-modal-header">
+              <h3>⚠️ Report message</h3>
+              <button onClick={() => setReportTarget(null)}>×</button>
+            </div>
+            <div className="poll-modal-body">
+              <div className="export-hint">Tell us what's wrong with this message. This is sent to Nexus Chat moderators for review.</div>
+              <textarea
+                className="poll-description-input report-reason-textarea"
+                placeholder="Describe the issue…"
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value.slice(0, 1000))}
+                rows={4}
+                autoFocus
+              />
+            </div>
+            <div className="poll-modal-footer">
+              <button type="button" className="poll-cancel-btn" onClick={() => setReportTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className="poll-submit-btn" onClick={handleReportSubmit} disabled={reportSubmitting}>
+                {reportSubmitting ? "Submitting…" : "Submit report"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {previewImage && (
         <div className="message-list-image-preview" onClick={() => setPreviewImage(null)}>

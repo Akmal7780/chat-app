@@ -11,9 +11,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.html import escape
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from utils.link_preview import fetch_link_preview, LinkPreviewError
 from utils.minio import get_s3
 from apps.conversations.models import Conversation, ConversationParticipant
@@ -129,6 +131,14 @@ class MessageViewSet(viewsets.ModelViewSet):
             "attachments", "reactions", "read_receipts"
         )
 
+        # A "send later" message is invisible to everyone but its sender
+        # until the scheduled time passes (the Celery Beat task publishes
+        # it — see tasks.publish_scheduled_messages) — a race between "the
+        # clock passed" and "the task actually ran" is fine here since this
+        # is purely a visibility filter, not what makes it live.
+        not_pending_scheduled = Q(scheduled_at__isnull=True) | Q(scheduled_at__lte=timezone.now())
+        queryset = queryset.filter(not_pending_scheduled | Q(sender=self.request.user))
+
         if self.kwargs.get("pk"):
             return queryset.filter(
                 conversation__participants__user=self.request.user,
@@ -178,6 +188,49 @@ class MessageViewSet(viewsets.ModelViewSet):
             return Response({"error": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"deleted": True})
+
+    # =========================
+    # SCHEDULED MESSAGES ("send later")
+    # =========================
+    @action(detail=False, methods=["post"], url_path="schedule")
+    def schedule(self, request):
+        conversation_id = request.data.get("conversation_id")
+        scheduled_at_raw = request.data.get("scheduled_at")
+        if not conversation_id or not scheduled_at_raw:
+            return Response({"error": "conversation_id and scheduled_at are required"}, status=400)
+
+        scheduled_at = parse_datetime(scheduled_at_raw)
+        if not scheduled_at:
+            return Response({"error": "scheduled_at must be an ISO 8601 datetime"}, status=400)
+        if timezone.is_naive(scheduled_at):
+            scheduled_at = timezone.make_aware(scheduled_at)
+
+        data = services.schedule_message(
+            request.user,
+            conversation_id,
+            request,
+            content=request.data.get("content"),
+            scheduled_at=scheduled_at,
+            reply_to_id=request.data.get("reply_to"),
+        )
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="scheduled")
+    def scheduled(self, request):
+        qs = services.list_scheduled_messages(
+            request.user, conversation_id=request.GET.get("conversation_id")
+        )
+        return Response(MessageSerializer(qs, many=True, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="cancel-schedule")
+    def cancel_schedule(self, request, pk=None):
+        services.cancel_scheduled_message(request.user, pk)
+        return Response({"cancelled": True})
+
+    @action(detail=True, methods=["post"], url_path="send-now")
+    def send_now(self, request, pk=None):
+        data = services.send_scheduled_now(request.user, pk, request)
+        return Response(data)
 
     # =========================
     # CREATE POLL
@@ -232,6 +285,15 @@ class MessageViewSet(viewsets.ModelViewSet):
         return Response(poll_data)
 
     # =========================
+    # REPORT A MESSAGE
+    # =========================
+    @action(detail=True, methods=["post"])
+    def report(self, request, pk=None):
+        message = self.get_object()
+        services.report_message(request.user, message, request.data.get("reason"))
+        return Response({"message": "Report submitted"}, status=status.HTTP_201_CREATED)
+
+    # =========================
     # CONTEXT
     # =========================
     def get_serializer_context(self):
@@ -257,6 +319,17 @@ class MessageViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(messages, many=True)
         return Response(serializer.data)
+
+    # =========================
+    # GLOBAL SEARCH (across every conversation the user is in)
+    # =========================
+    @action(detail=False, methods=["get"], url_path="global-search")
+    def global_search(self, request):
+        page = int(request.GET.get("page", 1))
+        results = services.global_search_messages(
+            request.user, request.GET.get("q", ""), page=page
+        )
+        return Response(results)
 
     # =========================
     # EXPORT CHAT HISTORY

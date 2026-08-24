@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react"
+import { createPortal } from "react-dom"
 import toast from "react-hot-toast"
 import api from "../api/axios"
 import "./MessageInput.css"
@@ -18,6 +19,10 @@ function MessageInput({
   onCancelReply
 }) {
   const [message, setMessage] = useState("")
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [scheduleDate, setScheduleDate] = useState("")
+  const [scheduleTime, setScheduleTime] = useState("")
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
@@ -246,6 +251,48 @@ const getSuggestions = async () => {
       setMessage("")
       setShowEmojiPicker(false)
       onCancelReply?.() // Clear reply
+    }
+  }
+
+  const openScheduleModal = () => {
+    if (!message.trim()) return
+    const defaultAt = new Date(Date.now() + 60 * 60 * 1000) // +1 hour
+    defaultAt.setSeconds(0, 0)
+    const pad = (n) => String(n).padStart(2, "0")
+    setScheduleDate(`${defaultAt.getFullYear()}-${pad(defaultAt.getMonth() + 1)}-${pad(defaultAt.getDate())}`)
+    setScheduleTime(`${pad(defaultAt.getHours())}:${pad(defaultAt.getMinutes())}`)
+    setShowScheduleModal(true)
+  }
+
+  const handleScheduleConfirm = async () => {
+    if (!scheduleDate || !scheduleTime) {
+      toast.error("Pick a date and time")
+      return
+    }
+    const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}:00`)
+    if (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date(Date.now() + 55 * 1000)) {
+      toast.error("Pick a time at least a minute from now")
+      return
+    }
+    setScheduleSubmitting(true)
+    try {
+      await api.post("/messages/schedule/", {
+        conversation_id: conversation.id,
+        content: message,
+        scheduled_at: scheduledAt.toISOString(),
+        reply_to: replyMessage?.id || null,
+      })
+      clearDraft(conversation?.id)
+      setMessage("")
+      setShowScheduleModal(false)
+      onCancelReply?.()
+      toast.success("Message scheduled")
+    } catch (err) {
+      console.error("Schedule message error:", err)
+      const data = err.response?.data
+      toast.error((Array.isArray(data) ? data[0] : data?.error) || "Could not schedule message")
+    } finally {
+      setScheduleSubmitting(false)
     }
   }
 
@@ -820,16 +867,28 @@ const handleRewrite = (tone) =>
             </svg>
           </button>
         ) : (message.trim() || selectedFile) ? (
-          <button
-            className="send-button"
-            onClick={handleSend}
-            disabled={!isConnected}
-            title="Send message"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+          <>
+            {message.trim() && !selectedFile && (
+              <button
+                className="action-button"
+                onClick={openScheduleModal}
+                disabled={!isConnected}
+                title="Schedule message"
+              >
+                🕒
+              </button>
+            )}
+            <button
+              className="send-button"
+              onClick={handleSend}
+              disabled={!isConnected}
+              title="Send message"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </>
         ) : (
           <button
             className="send-button disabled"
@@ -902,6 +961,47 @@ const handleRewrite = (tone) =>
           <span>Reconnecting...</span>
         </div>
       )} */}
+
+      {showScheduleModal && createPortal(
+        <div className="poll-modal-overlay" onClick={() => setShowScheduleModal(false)}>
+          <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="poll-modal-header">
+              <h3>🕒 Schedule message</h3>
+              <button onClick={() => setShowScheduleModal(false)}>×</button>
+            </div>
+            <div className="poll-modal-body">
+              <div className="export-hint">This message will be hidden from everyone else until the time below.</div>
+              <div className="export-field-row">
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="poll-duration-select"
+                />
+              </div>
+              <div className="export-field-row">
+                <span>Time</span>
+                <input
+                  type="time"
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="poll-duration-select"
+                />
+              </div>
+            </div>
+            <div className="poll-modal-footer">
+              <button type="button" className="poll-cancel-btn" onClick={() => setShowScheduleModal(false)}>
+                Cancel
+              </button>
+              <button type="button" className="poll-submit-btn" onClick={handleScheduleConfirm} disabled={scheduleSubmitting}>
+                {scheduleSubmitting ? "Scheduling…" : "Schedule"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   )

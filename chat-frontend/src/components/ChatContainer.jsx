@@ -25,7 +25,7 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [typingUser, setTypingUser] = useState(null)
-  const { onlineUsers, setOnlineUsers, setUsers } = useOnlineUsers();
+  const { onlineUsers, setUsers } = useOnlineUsers();
   const socketRef = useRef(null)
   const reconnectTimeoutRef = useRef(null)
   const [showGroupInfo, setShowGroupInfo] = useState(false)
@@ -44,6 +44,16 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [headerMenuPos, setHeaderMenuPos] = useState(null)
+  const headerMenuBtnRef = useRef(null)
+
+  const toggleHeaderMenu = () => {
+    if (!showHeaderMenu && headerMenuBtnRef.current) {
+      const rect = headerMenuBtnRef.current.getBoundingClientRect()
+      setHeaderMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
+    }
+    setShowHeaderMenu((prev) => !prev)
+  }
   const [groupInfoInitialMode, setGroupInfoInitialMode] = useState("view")
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportIncludePhotos, setExportIncludePhotos] = useState(true)
@@ -55,6 +65,9 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
   const [exportDateFrom, setExportDateFrom] = useState("")
   const [exportDateTo, setExportDateTo] = useState("")
   const [exporting, setExporting] = useState(false)
+  const [showScheduledModal, setShowScheduledModal] = useState(false)
+  const [scheduledMessages, setScheduledMessages] = useState([])
+  const [scheduledLoading, setScheduledLoading] = useState(false)
   const [showReportModal, setShowReportModal] = useState(false)
   const [reportReason, setReportReason] = useState("")
   const [reportSubmitting, setReportSubmitting] = useState(false)
@@ -211,6 +224,37 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
     }
   }
 
+  const openScheduledModal = () => {
+    setShowScheduledModal(true)
+    setScheduledLoading(true)
+    api.get("/messages/scheduled/", { params: { conversation_id: conversation.id } })
+      .then((res) => setScheduledMessages(res.data))
+      .catch((err) => console.error("Load scheduled messages error:", err))
+      .finally(() => setScheduledLoading(false))
+  }
+
+  const cancelScheduledMessage = async (id) => {
+    try {
+      await api.post(`/messages/${id}/cancel-schedule/`)
+      setScheduledMessages((prev) => prev.filter((m) => m.id !== id))
+      toast.success("Cancelled")
+    } catch (err) {
+      console.error("Cancel scheduled message error:", err)
+      toast.error("Failed to cancel")
+    }
+  }
+
+  const sendScheduledNow = async (id) => {
+    try {
+      await api.post(`/messages/${id}/send-now/`)
+      setScheduledMessages((prev) => prev.filter((m) => m.id !== id))
+      toast.success("Sent")
+    } catch (err) {
+      console.error("Send now error:", err)
+      toast.error("Failed to send")
+    }
+  }
+
   const openReportModal = () => {
     setShowHeaderMenu(false)
     setReportReason("")
@@ -320,7 +364,7 @@ const highlightText = (text, search) => {
   const regex = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
   return escaped.replace(regex, '<mark>$1</mark>');
 };
-  const { conversations, updateConversation, upsertConversation } = useChats()
+  const { conversations, updateConversation, upsertConversation, subscribePresence } = useChats()
   const { openCallPrompt } = useCall()
 
   const conversationRef = useRef(null)
@@ -328,6 +372,27 @@ const highlightText = (text, search) => {
 useEffect(() => {
   conversationRef.current = conversation
 }, [conversation])
+
+// Presence now arrives over the always-on notifications socket (see
+// ChatsContext), not this per-conversation one — refresh the open DM's
+// "last seen" text and the global users list when the other side drops.
+useEffect(() => {
+  return subscribePresence((event) => {
+    if (event.type !== "user_offline") return
+
+    if (Number(selectedUser?.otherUserId) === Number(event.user_id)) {
+      onSelectUser({ ...selectedUser, lastSeen: event.last_seen })
+    }
+
+    setUsers(prev =>
+      prev.map(u =>
+        String(u.id) === String(event.user_id)
+          ? { ...u, last_seen: event.last_seen }
+          : u
+      )
+    )
+  })
+}, [subscribePresence, selectedUser, onSelectUser, setUsers])
 
 useEffect(() => {
   if (!socketRef.current || !conversation) return
@@ -339,6 +404,26 @@ useEffect(() => {
     }))
   }
 }, [conversation])
+
+// Jump-to-message from global search — waits for that specific message to
+// actually be in the loaded list (a fresh chat-open fetch is async) before
+// scrolling, and only fires once per requested id so it doesn't re-trigger
+// on every later message-list update.
+const scrolledToSearchResultRef = useRef(null)
+useEffect(() => {
+  const targetId = selectedUser?.scrollToMessageId
+  if (!targetId || scrolledToSearchResultRef.current === targetId) return
+  if (!messages.some(m => m.id === targetId)) return
+
+  scrolledToSearchResultRef.current = targetId
+  setTimeout(() => {
+    const el = document.getElementById(`message-${targetId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: "smooth", block: "center" })
+    el.classList.add("highlight-message")
+    setTimeout(() => el.classList.remove("highlight-message"), 2000)
+  }, 100)
+}, [selectedUser?.scrollToMessageId, messages])
 
   const processedReads = useRef(new Set())
   const processedMessages = useRef(new Set())
@@ -571,48 +656,31 @@ const buildMemberChatTarget = (member) => {
 }
         
         else if (data.type === "read") {
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === data.message_id 
-                ? { ...msg, status: "read" } 
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === data.message_id
+                ? { ...msg, status: "read" }
                 : msg
             )
           )
         }
-        
-        // ONLINE USERS SYNC
-        else if (data.type === "online_users_list") {
-          setOnlineUsers(new Set(data.users))
+
+        // Whole conversation marked read at once (opening a chat with many
+        // unread messages goes through the REST bulk mark_read, not the
+        // per-message scroll-into-view "read" event above).
+        else if (data.type === "messages_read_bulk") {
+          const readIds = new Set(data.message_ids)
+          setMessages(prev =>
+            prev.map(msg =>
+              readIds.has(msg.id) ? { ...msg, status: "read" } : msg
+            )
+          )
         }
-        else if (data.type === "user_online") {
-          setOnlineUsers(prev => new Set([...prev, Number(data.user_id)]))
-        }
-        else if (data.type === "user_offline") {
-  setOnlineUsers(prev => {
-    const updated = new Set(prev)
-    updated.delete(Number(data.user_id))
-    return updated
-  })
 
-  // 🔥 selectedUser update
-  if (Number(selectedUser?.otherUserId) === Number(data.user_id)) {
-    onSelectUser({
-      ...selectedUser,
-      lastSeen: data.last_seen
-    })
-  }
-
-  // 🔥 USERS LIST update 
-  setUsers(prev =>
-  prev.map(u => {
-    console.log("COMPARE:", u.id, data.user_id)  
-
-    return String(u.id) === String(data.user_id)
-      ? { ...u, last_seen: data.last_seen }
-      : u
-  })
-)
-}
+        // Presence (online_users_list / user_online / user_offline) is no
+        // longer sent over this per-conversation socket — it now arrives
+        // exclusively over the always-on notifications socket, handled in
+        // ChatsContext and consumed below via subscribePresence().
         
         // TYPING INDICATOR
         else if (data.type === "typing_start") {
@@ -1187,6 +1255,17 @@ setLoading(true)
     🧠
   </button>
 
+  {/* Scheduled messages for this conversation */}
+  {selectedUser && !isSavedMessages && (
+    <button
+      className="summarize-btn"
+      onClick={openScheduledModal}
+      title="Scheduled messages"
+    >
+      🕒
+    </button>
+  )}
+
   {/* MODERN SEARCH BAR - O'ng tomonda */}
   <div className="search-wrapper">
     <div className={`search-container ${search ? 'has-value' : ''}`}>
@@ -1261,16 +1340,17 @@ setLoading(true)
   {selectedUser && (selectedUser.type === "group" || selectedUser.type === "channel") && (
     <div className="chat-header-menu-wrapper">
       <button
+        ref={headerMenuBtnRef}
         className="summarize-btn"
-        onClick={() => setShowHeaderMenu((prev) => !prev)}
+        onClick={toggleHeaderMenu}
         title="More"
       >
         ⋮
       </button>
-      {showHeaderMenu && (
+      {showHeaderMenu && headerMenuPos && createPortal(
         <>
           <div className="chat-header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
-          <div className="chat-header-menu">
+          <div className="chat-header-menu" style={{ top: headerMenuPos.top, right: headerMenuPos.right }}>
             <button onClick={handleHeaderMute}>
               <span>{conversation?.is_muted ? "🔔" : "🔕"}</span>
               {conversation?.is_muted ? "Unmute notifications" : "Mute notifications"}
@@ -1314,7 +1394,8 @@ setLoading(true)
               <span>🚪</span> Leave {selectedUser.type === "group" ? "group" : "channel"}
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )}
@@ -1829,6 +1910,39 @@ setLoading(true)
           <button type="button" className="poll-submit-btn" onClick={handleReportSubmit} disabled={reportSubmitting}>
             {reportSubmitting ? "Submitting…" : "Submit report"}
           </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {showScheduledModal && createPortal(
+    <div className="poll-modal-overlay" onClick={() => setShowScheduledModal(false)}>
+      <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="poll-modal-header">
+          <h3>🕒 Scheduled messages</h3>
+          <button onClick={() => setShowScheduledModal(false)}>×</button>
+        </div>
+
+        <div className="poll-modal-body">
+          {scheduledLoading ? (
+            <div className="export-hint">Loading…</div>
+          ) : scheduledMessages.length === 0 ? (
+            <div className="export-hint">No scheduled messages in this chat</div>
+          ) : (
+            scheduledMessages.map((m) => (
+              <div key={m.id} className="scheduled-message-card">
+                <div className="scheduled-message-content">{m.content}</div>
+                <div className="scheduled-message-meta">
+                  For {new Date(m.scheduled_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+                <div className="scheduled-message-actions">
+                  <button onClick={() => sendScheduledNow(m.id)}>Send now</button>
+                  <button className="danger" onClick={() => cancelScheduledMessage(m.id)}>Cancel</button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>,

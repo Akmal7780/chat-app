@@ -184,6 +184,7 @@ function ChatsList({ searchTerm, folderTab, currentUser, onSelectChat, selectedC
   const { conversations, loading, updateConversation, upsertConversation, folders } = useChats()
   const { users, onlineUsers } = useOnlineUsers()
   const [openMenuId, setOpenMenuId] = useState(null)
+  const [messageResults, setMessageResults] = useState([])
 
   const savedMessagesConversation = useMemo(
     () => conversations.find((c) => c.type === "private" && !c.other_participant) || null,
@@ -276,6 +277,46 @@ function ChatsList({ searchTerm, folderTab, currentUser, onSelectChat, selectedC
         u.username?.toLowerCase().includes(term)
     )
   }, [users, conversations, searchTerm])
+
+  // Message-content search across every conversation — separate from the
+  // chat-name filter above, which only matches conversation titles.
+  useEffect(() => {
+    const term = searchTerm.trim()
+    if (term.length < 2) {
+      setMessageResults([])
+      return
+    }
+    const timeout = setTimeout(() => {
+      api.get("/messages/global-search/", { params: { q: term } })
+        .then((res) => setMessageResults(res.data || []))
+        .catch((err) => {
+          console.error("Global search error:", err)
+          setMessageResults([])
+        })
+    }, 350)
+    return () => clearTimeout(timeout)
+  }, [searchTerm])
+
+  const handleMessageResultClick = (result) => {
+    const conversation = conversations.find((c) => c.id === result.conversation_id)
+    const isPrivate = result.conversation_type === "private"
+    onSelectChat({
+      conversationId: result.conversation_id,
+      type: result.conversation_type,
+      displayName: conversation
+        ? (isPrivate ? conversation.other_participant?.username : conversation.name)
+        : result.conversation_name,
+      avatarUrl: conversation
+        ? (isPrivate ? conversation.other_participant?.avatar_url : conversation.avatar_url)
+        : null,
+      otherUserId: conversation?.other_participant?.id ?? result.other_user_id ?? null,
+      membersCount: conversation?.members_count,
+      isMuted: conversation?.is_muted,
+      isPinned: conversation?.is_pinned,
+      lastSeen: conversation?.other_participant?.last_seen ?? null,
+      scrollToMessageId: result.message_id,
+    })
+  }
 
   const handleRowClick = (conversation) => {
     const isPrivate = conversation.type === "private"
@@ -395,6 +436,41 @@ function ChatsList({ searchTerm, folderTab, currentUser, onSelectChat, selectedC
           <div className="chats-list-section-label">New chat</div>
           {newChatUsers.map((user) => (
             <NewChatRow key={user.id} user={user} onClick={handleNewChatClick} />
+          ))}
+        </>
+      )}
+
+      {messageResults.length > 0 && (
+        <>
+          <div className="chats-list-section-label">Messages</div>
+          {messageResults.map((result) => (
+            <div
+              key={result.message_id}
+              className="chat-row"
+              onClick={() => handleMessageResultClick(result)}
+            >
+              <div className="chat-row-avatar">
+                <div
+                  className="chat-row-avatar-placeholder"
+                  style={{ backgroundColor: getAvatarColor(result.conversation_name || "?") }}
+                >
+                  {(result.conversation_name || "?")[0]?.toUpperCase()}
+                </div>
+              </div>
+              <div className="chat-row-body">
+                <div className="chat-row-top">
+                  <span className="chat-row-name">{result.conversation_name}</span>
+                  <span className="chat-row-time">
+                    {formatChatTimestamp(result.created_at)}
+                  </span>
+                </div>
+                <div className="chat-row-bottom">
+                  <span className="chat-row-preview">
+                    {result.sender_username}: {result.content}
+                  </span>
+                </div>
+              </div>
+            </div>
           ))}
         </>
       )}
