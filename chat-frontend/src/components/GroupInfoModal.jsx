@@ -15,6 +15,7 @@ function GroupInfoModal({
   onLeft,
   onUpdated,
   onSelectMember,
+  initialMode = "view",
 }) {
   const [members, setMembers] = useState([])
   const [mode, setMode] = useState("view") // view | edit | addMembers
@@ -79,6 +80,13 @@ function GroupInfoModal({
     setAvatarPreview(null)
     setMode("edit")
   }
+
+  useEffect(() => {
+    if (initialMode === "edit" && members.length > 0) {
+      openEdit()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMode, members.length])
 
   const handleAvatarChange = (e) => {
     const file = e.target.files?.[0]

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import toast from "react-hot-toast"
 import api from "../api/axios"
 import MessageList from "./MessageList"
@@ -33,11 +34,258 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
   const [showSummary, setShowSummary] = useState(false)
   const [summaryText, setSummaryText] = useState("")
   const [summaryLoading, setSummaryLoading] = useState(false)
+  const [showAiSearch, setShowAiSearch] = useState(false)
+  const [aiSearchQuestion, setAiSearchQuestion] = useState("")
+  const [aiSearchAnswer, setAiSearchAnswer] = useState("")
+  const [aiSearchLoading, setAiSearchLoading] = useState(false)
   const firstUnreadRef = useRef(null)
   const [search, setSearch] = useState("")
   const [searchResults, setSearchResults] = useState([])
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false)
+  const [groupInfoInitialMode, setGroupInfoInitialMode] = useState("view")
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportIncludePhotos, setExportIncludePhotos] = useState(true)
+  const [exportIncludeVideos, setExportIncludeVideos] = useState(true)
+  const [exportIncludeVoice, setExportIncludeVoice] = useState(true)
+  const [exportIncludeFiles, setExportIncludeFiles] = useState(true)
+  const [exportMaxSizeMb, setExportMaxSizeMb] = useState(8)
+  const [exportFormat, setExportFormat] = useState("html")
+  const [exportDateFrom, setExportDateFrom] = useState("")
+  const [exportDateTo, setExportDateTo] = useState("")
+  const [exporting, setExporting] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportReason, setReportReason] = useState("")
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [showPollModal, setShowPollModal] = useState(false)
+  const [pollQuestion, setPollQuestion] = useState("")
+  const [pollDescription, setPollDescription] = useState("")
+  const [pollOptions, setPollOptions] = useState(["", ""])
+  const [pollShowWhoVoted, setPollShowWhoVoted] = useState(true)
+  const [pollAllowsMultiple, setPollAllowsMultiple] = useState(false)
+  const [pollAllowAddingOptions, setPollAllowAddingOptions] = useState(false)
+  const [pollAllowRevoting, setPollAllowRevoting] = useState(true)
+  const [pollShuffleOptions, setPollShuffleOptions] = useState(false)
+  const [pollQuizMode, setPollQuizMode] = useState(false)
+  const [pollCorrectIndices, setPollCorrectIndices] = useState([])
+  const [pollDuration, setPollDuration] = useState("")
+  const [pollSubmitting, setPollSubmitting] = useState(false)
+
+  const POLL_DURATIONS = [
+    { value: "", label: "Off" },
+    { value: String(60 * 60), label: "1 hour" },
+    { value: String(60 * 60 * 24), label: "1 day" },
+    { value: String(60 * 60 * 24 * 3), label: "3 days" },
+    { value: String(60 * 60 * 24 * 7), label: "1 week" },
+  ]
+
+  const openPollModal = () => {
+    setShowHeaderMenu(false)
+    setPollQuestion("")
+    setPollDescription("")
+    setPollOptions(["", ""])
+    setPollShowWhoVoted(true)
+    setPollAllowsMultiple(false)
+    setPollAllowAddingOptions(false)
+    setPollAllowRevoting(true)
+    setPollShuffleOptions(false)
+    setPollQuizMode(false)
+    setPollCorrectIndices([])
+    setPollDuration("")
+    setShowPollModal(true)
+  }
+
+  const updatePollOption = (index, value) => {
+    setPollOptions((prev) => prev.map((opt, i) => (i === index ? value : opt)))
+  }
+
+  const addPollOption = () => {
+    setPollOptions((prev) => (prev.length >= 10 ? prev : [...prev, ""]))
+  }
+
+  const removePollOption = (index) => {
+    setPollOptions((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== index)))
+    setPollCorrectIndices((prev) => prev.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)))
+  }
+
+  const togglePollQuizMode = (checked) => {
+    setPollQuizMode(checked)
+    if (checked) setPollAllowsMultiple(false)
+  }
+
+  const togglePollCorrectOption = (index) => {
+    setPollCorrectIndices((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    )
+  }
+
+  const handleCreatePoll = async () => {
+    const question = pollQuestion.trim()
+    const cleanedOptions = pollOptions.map((o) => o.trim()).filter(Boolean)
+    if (!question) {
+      toast.error("Poll question is required")
+      return
+    }
+    if (cleanedOptions.length < 2) {
+      toast.error("Add at least 2 options")
+      return
+    }
+    if (pollQuizMode && pollCorrectIndices.length === 0) {
+      toast.error("Select the correct answer")
+      return
+    }
+    setPollSubmitting(true)
+    try {
+      await api.post("/messages/create-poll/", {
+        conversation_id: conversation.id,
+        question,
+        description: pollDescription.trim(),
+        options: cleanedOptions,
+        allows_multiple: pollQuizMode ? false : pollAllowsMultiple,
+        anonymous: !pollShowWhoVoted,
+        allow_adding_options: pollAllowAddingOptions,
+        allow_revoting: pollAllowRevoting,
+        shuffle_options: pollShuffleOptions,
+        quiz_mode: pollQuizMode,
+        correct_option_indices: pollQuizMode ? pollCorrectIndices : [],
+        duration_seconds: pollDuration ? Number(pollDuration) : null,
+      })
+      setShowPollModal(false)
+    } catch (err) {
+      console.error("Create poll error:", err)
+      const data = err.response?.data
+      toast.error((Array.isArray(data) ? data[0] : data?.detail || data?.error) || "Could not create poll")
+    } finally {
+      setPollSubmitting(false)
+    }
+  }
+
+  const openGroupInfo = () => {
+    setShowHeaderMenu(false)
+    setGroupInfoInitialMode("view")
+    setShowGroupInfo(true)
+  }
+
+  const openManageGroup = () => {
+    setShowHeaderMenu(false)
+    setGroupInfoInitialMode("edit")
+    setShowGroupInfo(true)
+  }
+
+  const handleHeaderMute = async () => {
+    setShowHeaderMenu(false)
+    try {
+      const action = conversation.is_muted ? "unmute" : "mute"
+      const res = await api.post(`/conversations/${conversation.id}/${action}/`)
+      setConversation(res.data)
+      updateConversation(res.data.id, res.data)
+    } catch (err) {
+      console.error("Mute toggle error:", err)
+      toast.error("Failed to update mute setting")
+    }
+  }
+
+  const handleHeaderLeave = async () => {
+    setShowHeaderMenu(false)
+    if (!window.confirm(`Leave "${conversation.name}"?`)) return
+    try {
+      await api.post(`/conversations/${conversation.id}/leave/`)
+      onBack?.()
+    } catch (err) {
+      console.error("Leave group error:", err)
+      toast.error("Failed to leave group")
+    }
+  }
+
+  const handleHeaderClearHistory = async () => {
+    setShowHeaderMenu(false)
+    if (!window.confirm("Clear chat history? This only removes it from your view — other participants keep their copy.")) return
+    try {
+      await api.post(`/conversations/${conversation.id}/clear-history/`)
+      setMessages([])
+      toast.success("Chat history cleared")
+    } catch (err) {
+      console.error("Clear history error:", err)
+      toast.error("Failed to clear history")
+    }
+  }
+
+  const openReportModal = () => {
+    setShowHeaderMenu(false)
+    setReportReason("")
+    setShowReportModal(true)
+  }
+
+  const handleReportSubmit = async () => {
+    const reason = reportReason.trim()
+    if (!reason) {
+      toast.error("Please describe the issue")
+      return
+    }
+    setReportSubmitting(true)
+    try {
+      await api.post(`/conversations/${conversation.id}/report/`, { reason })
+      setShowReportModal(false)
+      toast.success("Report submitted")
+    } catch (err) {
+      console.error("Report error:", err)
+      toast.error("Failed to submit report")
+    } finally {
+      setReportSubmitting(false)
+    }
+  }
+
+  const openExportModal = () => {
+    setShowHeaderMenu(false)
+    setExportIncludePhotos(true)
+    setExportIncludeVideos(true)
+    setExportIncludeVoice(true)
+    setExportIncludeFiles(true)
+    setExportMaxSizeMb(8)
+    setExportFormat("html")
+    setExportDateFrom("")
+    setExportDateTo("")
+    setShowExportModal(true)
+  }
+
+  const handleExportSubmit = async () => {
+    setExporting(true)
+    try {
+      const res = await api.get("/messages/export/", {
+        params: {
+          conversation_id: conversation.id,
+          export_format: exportFormat,
+          include_photos: exportIncludePhotos,
+          include_videos: exportIncludeVideos,
+          include_voice: exportIncludeVoice,
+          include_files: exportIncludeFiles,
+          max_size_mb: exportMaxSizeMb,
+          date_from: exportDateFrom || undefined,
+          date_to: exportDateTo || undefined,
+        },
+        responseType: "blob",
+      })
+      const disposition = res.headers["content-disposition"] || ""
+      const match = disposition.match(/filename="?([^"]+)"?/)
+      const fallbackExt = exportFormat === "html" ? "zip" : "txt"
+      const filename = match ? match[1] : `${conversation.name || "chat"}_export.${fallbackExt}`
+      const url = window.URL.createObjectURL(res.data)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setShowExportModal(false)
+    } catch (err) {
+      console.error("Export chat history error:", err)
+      toast.error("Failed to export chat history")
+    } finally {
+      setExporting(false)
+    }
+  }
 
 const handleSearchResultClick = (messageId) => {
   setSearch('')
@@ -479,6 +727,17 @@ else if (data.type === "message_pin_changed") {
   )
 }
 
+// 📊 POLL VOTE UPDATE
+else if (data.type === "poll_updated") {
+  setMessages(prev =>
+    prev.map(msg =>
+      Number(msg.id) === Number(data.message_id)
+        ? { ...msg, poll: data.poll }
+        : msg
+    )
+  )
+}
+
 // ➡️ FORWARD RESULT (only sent back to the user who requested it)
 else if (data.type === "forward_result") {
   if (data.success) {
@@ -720,6 +979,34 @@ setLoading(true)
     }
   }
 
+  const handleAiSearch = async () => {
+    const question = aiSearchQuestion.trim()
+    if (!question || aiSearchLoading) return
+
+    setAiSearchLoading(true)
+    setAiSearchAnswer("")
+
+    try {
+      const contents = messages
+        .filter((m) => !m.is_deleted && m.content?.trim())
+        .slice(-200)
+        .map((m) => `${m.sender_username || m.sender}: ${m.content}`)
+
+      if (contents.length === 0) {
+        setAiSearchAnswer("Not enough messages to search yet.")
+        return
+      }
+
+      const res = await api.post("/ai/search/", { messages: contents, question })
+      setAiSearchAnswer(res.data.answer)
+    } catch (err) {
+      console.error("AI search error:", err)
+      setAiSearchAnswer("Failed to search. Please try again.")
+    } finally {
+      setAiSearchLoading(false)
+    }
+  }
+
   const markAsRead = (messageId) => {
     if (!socketRef.current || !isConnected) return
     
@@ -891,6 +1178,15 @@ setLoading(true)
     ✨
   </button>
 
+  {/* Ask AI about this chat */}
+  <button
+    className="summarize-btn"
+    onClick={() => setShowAiSearch(true)}
+    title="Ask AI about this chat"
+  >
+    🧠
+  </button>
+
   {/* MODERN SEARCH BAR - O'ng tomonda */}
   <div className="search-wrapper">
     <div className={`search-container ${search ? 'has-value' : ''}`}>
@@ -961,6 +1257,68 @@ setLoading(true)
     )}
   </div>
 
+  {/* Header kebab menu (group/channel only) */}
+  {selectedUser && (selectedUser.type === "group" || selectedUser.type === "channel") && (
+    <div className="chat-header-menu-wrapper">
+      <button
+        className="summarize-btn"
+        onClick={() => setShowHeaderMenu((prev) => !prev)}
+        title="More"
+      >
+        ⋮
+      </button>
+      {showHeaderMenu && (
+        <>
+          <div className="chat-header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
+          <div className="chat-header-menu">
+            <button onClick={handleHeaderMute}>
+              <span>{conversation?.is_muted ? "🔔" : "🔕"}</span>
+              {conversation?.is_muted ? "Unmute notifications" : "Mute notifications"}
+            </button>
+            <button
+              onClick={() => {
+                setShowHeaderMenu(false)
+                if (selectedUser.type === "group") openGroupInfo()
+                else setShowChannelInfo(true)
+              }}
+            >
+              <span>ℹ️</span> View {selectedUser.type === "group" ? "group" : "channel"} info
+            </button>
+            {selectedUser.type === "group" ? (
+              <button onClick={openManageGroup}>
+                <span>⚙️</span> Manage group
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setShowHeaderMenu(false)
+                  setShowChannelInfo(true)
+                }}
+              >
+                <span>⚙️</span> Manage channel
+              </button>
+            )}
+            <button onClick={openPollModal}>
+              <span>📊</span> Create poll
+            </button>
+            <button onClick={openExportModal}>
+              <span>📤</span> Export chat history
+            </button>
+            <button onClick={openReportModal}>
+              <span>⚠️</span> Report
+            </button>
+            <button onClick={handleHeaderClearHistory}>
+              <span>🧹</span> Clear history
+            </button>
+            <button className="danger" onClick={handleHeaderLeave}>
+              <span>🚪</span> Leave {selectedUser.type === "group" ? "group" : "channel"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )}
+
   {showChannelInfo && selectedUser?.type === "channel" && conversation && (
     <ChannelInfoModal
       conversation={conversation}
@@ -1007,7 +1365,8 @@ setLoading(true)
       currentUser={currentUser}
       allUsers={users}
       onlineUsers={onlineUsers}
-      onClose={() => setShowGroupInfo(false)}
+      initialMode={groupInfoInitialMode}
+      onClose={() => { setShowGroupInfo(false); setGroupInfoInitialMode("view") }}
       onMuteToggled={(updated) => { setConversation(updated); updateConversation(updated.id, updated) }}
       onUpdated={(updated) => { setConversation((prev) => ({ ...prev, ...updated })); updateConversation(conversation.id, updated) }}
       onLeft={() => onBack?.()}
@@ -1127,6 +1486,353 @@ setLoading(true)
         </div>
       </div>
     </div>
+  )}
+
+  {showAiSearch && (
+    <div
+      className="summary-modal-overlay"
+      onClick={() => { setShowAiSearch(false); setAiSearchQuestion(""); setAiSearchAnswer("") }}
+    >
+      <div className="summary-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="summary-modal-header">
+          <h3>🧠 Ask AI</h3>
+          <button onClick={() => { setShowAiSearch(false); setAiSearchQuestion(""); setAiSearchAnswer("") }}>×</button>
+        </div>
+        <div className="summary-modal-body">
+          <div className="ai-search-input-row">
+            <input
+              type="text"
+              className="ai-search-input"
+              placeholder="Ask something about this chat…"
+              value={aiSearchQuestion}
+              onChange={(e) => setAiSearchQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAiSearch()}
+              autoFocus
+            />
+            <button
+              className="ai-search-submit"
+              onClick={handleAiSearch}
+              disabled={aiSearchLoading || !aiSearchQuestion.trim()}
+            >
+              {aiSearchLoading ? "…" : "Ask"}
+            </button>
+          </div>
+          {aiSearchLoading ? (
+            <div className="summary-loading">Searching…</div>
+          ) : aiSearchAnswer ? (
+            <p>{aiSearchAnswer}</p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )}
+
+  {showPollModal && createPortal(
+    <div className="poll-modal-overlay" onClick={() => setShowPollModal(false)}>
+      <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="poll-modal-header">
+          <h3>New poll</h3>
+          <button onClick={() => setShowPollModal(false)}>×</button>
+        </div>
+
+        <div className="poll-modal-body">
+          <div className="poll-section-label">Question</div>
+          <input
+            type="text"
+            className="poll-question-input"
+            placeholder="Ask a question…"
+            value={pollQuestion}
+            onChange={(e) => setPollQuestion(e.target.value)}
+            autoFocus
+          />
+          <input
+            type="text"
+            className="poll-description-input"
+            placeholder="Add Description (optional)"
+            value={pollDescription}
+            onChange={(e) => setPollDescription(e.target.value.slice(0, 500))}
+          />
+
+          <div className="poll-section-label">Poll options</div>
+          <div className="poll-options-list">
+            {pollOptions.map((option, index) => (
+              <div key={index} className="poll-option-row">
+                {pollQuizMode && (
+                  <input
+                    type="checkbox"
+                    className="poll-option-correct-check"
+                    checked={pollCorrectIndices.includes(index)}
+                    onChange={() => togglePollCorrectOption(index)}
+                    title="Mark as correct answer"
+                  />
+                )}
+                <input
+                  type="text"
+                  placeholder={`Option ${index + 1}`}
+                  value={option}
+                  onChange={(e) => updatePollOption(index, e.target.value)}
+                />
+                {pollOptions.length > 2 && (
+                  <button
+                    type="button"
+                    className="poll-option-remove"
+                    onClick={() => removePollOption(index)}
+                    title="Remove option"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {pollOptions.length < 10 ? (
+            <button type="button" className="poll-add-option" onClick={addPollOption}>
+              + Add an option
+            </button>
+          ) : (
+            <div className="poll-options-hint">Maximum 10 options</div>
+          )}
+
+          <div className="poll-section-label">Settings</div>
+          <div className="poll-settings-list">
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#3b82f6" }}>👁️</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Show Who Voted</span>
+                <span className="poll-setting-desc">Display voter name on each option.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollShowWhoVoted}
+                onChange={(e) => setPollShowWhoVoted(e.target.checked)}
+              />
+            </label>
+
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#f59e0b" }}>🔀</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Allow Multiple Answers</span>
+                <span className="poll-setting-desc">Voters can select more than one option.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollAllowsMultiple}
+                disabled={pollQuizMode}
+                onChange={(e) => setPollAllowsMultiple(e.target.checked)}
+              />
+            </label>
+
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#6366f1" }}>➕</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Allow Adding Options</span>
+                <span className="poll-setting-desc">Participants can suggest new options.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollAllowAddingOptions}
+                onChange={(e) => setPollAllowAddingOptions(e.target.checked)}
+              />
+            </label>
+
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#a855f7" }}>🔁</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Allow Revoting</span>
+                <span className="poll-setting-desc">Voters can change their vote.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollAllowRevoting}
+                onChange={(e) => setPollAllowRevoting(e.target.checked)}
+              />
+            </label>
+
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#f97316" }}>🔀</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Shuffle Options</span>
+                <span className="poll-setting-desc">Answers appear in random order for each viewer.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollShuffleOptions}
+                onChange={(e) => setPollShuffleOptions(e.target.checked)}
+              />
+            </label>
+
+            <label className="poll-setting-row">
+              <span className="poll-setting-icon" style={{ background: "#22c55e" }}>✅</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Set Correct Answer</span>
+                <span className="poll-setting-desc">Mark one or more options as the right answer.</span>
+              </span>
+              <input
+                type="checkbox"
+                className="poll-toggle"
+                checked={pollQuizMode}
+                onChange={(e) => togglePollQuizMode(e.target.checked)}
+              />
+            </label>
+
+            <div className="poll-setting-row poll-setting-row-static">
+              <span className="poll-setting-icon" style={{ background: "#ef4444" }}>⏱️</span>
+              <span className="poll-setting-text">
+                <span className="poll-setting-title">Limit Duration</span>
+                <span className="poll-setting-desc">Automatically close the poll at a set time.</span>
+              </span>
+              <select
+                className="poll-duration-select"
+                value={pollDuration}
+                onChange={(e) => setPollDuration(e.target.value)}
+              >
+                {POLL_DURATIONS.map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="poll-modal-footer">
+          <button type="button" className="poll-cancel-btn" onClick={() => setShowPollModal(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="poll-submit-btn"
+            onClick={handleCreatePoll}
+            disabled={pollSubmitting}
+          >
+            {pollSubmitting ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {showExportModal && createPortal(
+    <div className="poll-modal-overlay" onClick={() => setShowExportModal(false)}>
+      <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="poll-modal-header">
+          <h3>Chat export settings</h3>
+          <button onClick={() => setShowExportModal(false)}>×</button>
+        </div>
+
+        <div className="poll-modal-body">
+          <div className="export-checkbox-list">
+            <label className="export-checkbox-row">
+              <input type="checkbox" checked={exportIncludePhotos} onChange={(e) => setExportIncludePhotos(e.target.checked)} />
+              Photos
+            </label>
+            <label className="export-checkbox-row">
+              <input type="checkbox" checked={exportIncludeVideos} onChange={(e) => setExportIncludeVideos(e.target.checked)} />
+              Videos
+            </label>
+            <label className="export-checkbox-row">
+              <input type="checkbox" checked={exportIncludeVoice} onChange={(e) => setExportIncludeVoice(e.target.checked)} />
+              Voice messages
+            </label>
+            <label className="export-checkbox-row">
+              <input type="checkbox" checked={exportIncludeFiles} onChange={(e) => setExportIncludeFiles(e.target.checked)} />
+              Files
+            </label>
+          </div>
+
+          <div className="export-size-row">
+            <span>Size limit</span>
+            <span className="export-size-value">{exportMaxSizeMb} MB</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="50"
+            value={exportMaxSizeMb}
+            onChange={(e) => setExportMaxSizeMb(Number(e.target.value))}
+            className="export-size-slider"
+          />
+
+          <div className="export-field-row">
+            <span>Format</span>
+            <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)} className="poll-duration-select">
+              <option value="html">HTML</option>
+              <option value="txt">Plain text</option>
+            </select>
+          </div>
+
+          <div className="export-field-row">
+            <span>From</span>
+            <input
+              type="date"
+              value={exportDateFrom}
+              onChange={(e) => setExportDateFrom(e.target.value)}
+              className="poll-duration-select"
+            />
+          </div>
+          <div className="export-field-row">
+            <span>To</span>
+            <input
+              type="date"
+              value={exportDateTo}
+              onChange={(e) => setExportDateTo(e.target.value)}
+              className="poll-duration-select"
+            />
+          </div>
+
+          <div className="export-hint">The file downloads to your browser's default downloads location.</div>
+        </div>
+
+        <div className="poll-modal-footer">
+          <button type="button" className="poll-cancel-btn" onClick={() => setShowExportModal(false)}>
+            Cancel
+          </button>
+          <button type="button" className="poll-submit-btn" onClick={handleExportSubmit} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {showReportModal && createPortal(
+    <div className="poll-modal-overlay" onClick={() => setShowReportModal(false)}>
+      <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="poll-modal-header">
+          <h3>⚠️ Report {selectedUser?.type === "group" ? "group" : "channel"}</h3>
+          <button onClick={() => setShowReportModal(false)}>×</button>
+        </div>
+
+        <div className="poll-modal-body">
+          <div className="export-hint">Tell us what's wrong. This is sent to Nexus Chat moderators for review.</div>
+          <textarea
+            className="poll-description-input report-reason-textarea"
+            placeholder="Describe the issue…"
+            value={reportReason}
+            onChange={(e) => setReportReason(e.target.value.slice(0, 1000))}
+            rows={4}
+            autoFocus
+          />
+        </div>
+
+        <div className="poll-modal-footer">
+          <button type="button" className="poll-cancel-btn" onClick={() => setShowReportModal(false)}>
+            Cancel
+          </button>
+          <button type="button" className="poll-submit-btn" onClick={handleReportSubmit} disabled={reportSubmitting}>
+            {reportSubmitting ? "Submitting…" : "Submit report"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )}
 
 </div>

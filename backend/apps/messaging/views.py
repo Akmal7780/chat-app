@@ -1,3 +1,8 @@
+import io
+import os
+import logging
+import zipfile
+
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -5,13 +10,19 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.conf import settings
 from django.http import HttpResponse
+from django.utils.html import escape
+from django.utils.dateparse import parse_date
 from utils.link_preview import fetch_link_preview, LinkPreviewError
+from utils.minio import get_s3
 from apps.conversations.models import Conversation, ConversationParticipant
-from .models import Message
+from .models import Message, Attachment
 from .serializers import MessageSerializer
 from apps.users.throttles import MessageThrottle,UploadThrottle
 from . import services
+
+logger = logging.getLogger(__name__)
 
 class InitUpload(APIView):
     authentication_classes = [JWTAuthentication]
@@ -21,11 +32,17 @@ class InitUpload(APIView):
     def post(self, request):
         file_name = request.data.get("file_name")
         conversation_id = request.data.get("conversation_id")
+        file_size = request.data.get("file_size")
 
         if not file_name or not conversation_id:
             return Response({"error": "file_name and conversation_id required"}, status=400)
 
-        result = services.initiate_upload(request.user, conversation_id, file_name)
+        try:
+            file_size = int(file_size) if file_size is not None else None
+        except (TypeError, ValueError):
+            file_size = None
+
+        result = services.initiate_upload(request.user, conversation_id, file_name, file_size)
         return Response(result)
 
 class UploadPartDirect(APIView):
@@ -123,18 +140,20 @@ class MessageViewSet(viewsets.ModelViewSet):
         if not conversation_id:
             return Message.objects.none()
 
-        is_participant = ConversationParticipant.objects.filter(
+        participant = ConversationParticipant.objects.filter(
             conversation_id=conversation_id,
             user=self.request.user,
             left_at__isnull=True
-        ).exists()
+        ).first()
 
-        if not is_participant:
+        if not participant:
             return Message.objects.none()
 
-        return queryset.filter(
-            conversation_id=conversation_id
-        ).order_by("created_at")
+        queryset = queryset.filter(conversation_id=conversation_id)
+        if participant.cleared_before:
+            queryset = queryset.filter(created_at__gte=participant.cleared_before)
+
+        return queryset.order_by("created_at")
 
     
     # =========================
@@ -159,6 +178,58 @@ class MessageViewSet(viewsets.ModelViewSet):
             return Response({"error": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"deleted": True})
+
+    # =========================
+    # CREATE POLL
+    # =========================
+    @action(detail=False, methods=["post"], url_path="create-poll")
+    def create_poll(self, request):
+        conversation_id = request.data.get("conversation_id")
+        if not conversation_id:
+            return Response({"error": "conversation_id is required"}, status=400)
+
+        message = services.create_poll(
+            request.user,
+            conversation_id,
+            request,
+            question=request.data.get("question"),
+            options=request.data.get("options", []),
+            allows_multiple=bool(request.data.get("allows_multiple", False)),
+            description=request.data.get("description", ""),
+            anonymous=bool(request.data.get("anonymous", False)),
+            allow_adding_options=bool(request.data.get("allow_adding_options", False)),
+            allow_revoting=bool(request.data.get("allow_revoting", True)),
+            shuffle_options=bool(request.data.get("shuffle_options", False)),
+            quiz_mode=bool(request.data.get("quiz_mode", False)),
+            correct_option_indices=request.data.get("correct_option_indices", []),
+            duration_seconds=request.data.get("duration_seconds"),
+        )
+
+        return Response(
+            MessageSerializer(message, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    # =========================
+    # VOTE ON A POLL
+    # =========================
+    @action(detail=True, methods=["post"], url_path="vote")
+    def vote(self, request, pk=None):
+        message = self.get_object()
+        option_ids = request.data.get("option_ids", [])
+        if not isinstance(option_ids, list):
+            option_ids = [option_ids]
+
+        poll_data = services.vote_poll(request.user, message, option_ids, request=request)
+        return Response(poll_data)
+
+    @action(detail=True, methods=["post"], url_path="add-option")
+    def add_option(self, request, pk=None):
+        message = self.get_object()
+        poll_data = services.add_poll_option(
+            request.user, message, request, request.data.get("text", "")
+        )
+        return Response(poll_data)
 
     # =========================
     # CONTEXT
@@ -211,15 +282,168 @@ class MessageViewSet(viewsets.ModelViewSet):
         except Conversation.DoesNotExist:
             return Response({"error": "Conversation not found"}, status=404)
 
+        def flag(name, default=True):
+            value = request.GET.get(name)
+            if value is None:
+                return default
+            return value.lower() in ("1", "true", "yes")
+
+        export_format = request.GET.get("export_format", "txt").lower()
+        if export_format not in ("txt", "html"):
+            export_format = "txt"
+        include_photos = flag("include_photos")
+        include_videos = flag("include_videos")
+        include_voice = flag("include_voice")
+        include_files = flag("include_files")
+        try:
+            max_size_mb = float(request.GET.get("max_size_mb") or 0)
+        except (TypeError, ValueError):
+            max_size_mb = 0
+        max_size_bytes = max_size_mb * 1024 * 1024 if max_size_mb > 0 else None
+
         messages = Message.objects.filter(
             conversation_id=conversation_id, is_deleted=False
         ).select_related("sender").prefetch_related("attachments").order_by("created_at")
+
+        date_from = parse_date(request.GET.get("date_from") or "")
+        date_to = parse_date(request.GET.get("date_to") or "")
+        if date_from:
+            messages = messages.filter(created_at__date__gte=date_from)
+        if date_to:
+            messages = messages.filter(created_at__date__lte=date_to)
 
         call_status_labels = {
             Message.CALL_COMPLETED: "completed",
             Message.CALL_DECLINED: "declined",
             Message.CALL_MISSED_OR_CANCELED: "missed/canceled",
         }
+
+        def attachment_allowed(attachment):
+            if attachment.file_type == Attachment.IMAGE and not include_photos:
+                return False
+            if attachment.file_type == Attachment.VIDEO and not include_videos:
+                return False
+            if attachment.file_type == Attachment.FILE and not include_files:
+                return False
+            return True
+
+        raw_name = conversation.name or "chat"
+        safe_name = "".join(
+            c for c in raw_name if c.isalnum() or c in (" ", "-", "_")
+        ).strip() or "chat"
+
+        if export_format == "html":
+            s3 = get_s3()
+            zip_buffer = io.BytesIO()
+            zf = zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED)
+            used_names = set()
+
+            def unique_filename(folder, original_name, fallback_ext):
+                base = os.path.basename(original_name or "") or f"file{fallback_ext}"
+                base = "".join(c for c in base if c.isalnum() or c in (" ", "-", "_", ".")).strip() or f"file{fallback_ext}"
+                candidate = f"{folder}/{base}"
+                n = 1
+                while candidate in used_names:
+                    name, ext = os.path.splitext(base)
+                    candidate = f"{folder}/{name}_{n}{ext}"
+                    n += 1
+                used_names.add(candidate)
+                return candidate
+
+            def bundle_attachment(att, folder, fallback_ext):
+                try:
+                    obj = s3.get_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=str(att.file))
+                    data = obj["Body"].read()
+                except Exception:
+                    logger.exception("Export: failed to fetch attachment %s", att.id)
+                    return None
+                local_name = unique_filename(folder, att.original_name, fallback_ext)
+                zf.writestr(local_name, data)
+                return local_name
+
+            rows = []
+            for message in messages:
+                timestamp = message.created_at.strftime("%Y-%m-%d %H:%M")
+                sender = escape(message.sender.username)
+                parts = []
+
+                if message.message_type == Message.SYSTEM:
+                    parts.append(f'<div class="system">[{escape(message.content)}]</div>')
+                elif message.message_type == Message.CALL:
+                    kind = "Video call" if message.call_is_video else "Voice call"
+                    status_label = call_status_labels.get(message.call_status, message.call_status)
+                    duration = f", {message.call_duration_seconds}s" if message.call_duration_seconds else ""
+                    parts.append(f'<div class="system">[{kind} — {status_label}{duration}]</div>')
+                elif message.message_type == Message.VOICE:
+                    if include_voice:
+                        att = message.attachments.first()
+                        if att:
+                            local_name = bundle_attachment(att, "voice", ".webm")
+                            if local_name:
+                                parts.append(f'<audio controls src="{escape(local_name)}"></audio>')
+                            else:
+                                parts.append('<div class="system">[Voice message — download failed]</div>')
+                        else:
+                            parts.append('<div class="system">[Voice message]</div>')
+                    else:
+                        parts.append('<div class="system">[Voice message — excluded]</div>')
+                else:
+                    if message.content:
+                        parts.append(f'<div class="text">{escape(message.content)}</div>')
+                    for att in message.attachments.all():
+                        if not attachment_allowed(att):
+                            parts.append(f'<div class="system">[{att.file_type} excluded: {escape(att.original_name)}]</div>')
+                            continue
+                        if max_size_bytes and att.file_size > max_size_bytes:
+                            size_mb = att.file_size / (1024 * 1024)
+                            parts.append(f'<div class="system">[File too large ({size_mb:.1f} MB): {escape(att.original_name)}]</div>')
+                            continue
+                        if att.file_type == Attachment.IMAGE:
+                            local_name = bundle_attachment(att, "photos", ".jpg")
+                            if local_name:
+                                parts.append(f'<img src="{escape(local_name)}" alt="{escape(att.original_name)}">')
+                        elif att.file_type == Attachment.VIDEO:
+                            local_name = bundle_attachment(att, "videos", ".mp4")
+                            if local_name:
+                                parts.append(f'<video controls src="{escape(local_name)}"></video>')
+                        else:
+                            local_name = bundle_attachment(att, "files", "")
+                            if local_name:
+                                parts.append(f'<a href="{escape(local_name)}">📎 {escape(att.original_name or "file")}</a>')
+
+                if not parts:
+                    continue
+
+                rows.append(
+                    f'<div class="msg"><div class="meta">{sender} · {timestamp}</div>{"".join(parts)}</div>'
+                )
+
+            html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{escape(raw_name)}</title>
+<link rel="stylesheet" href="css/style.css">
+</head><body>
+<h2>{escape(raw_name)}</h2>
+{"".join(rows)}
+</body></html>"""
+
+            css = """body { font-family: -apple-system, Segoe UI, sans-serif; background: #0b0f19; color: #e5e7eb; padding: 20px; max-width: 720px; margin: 0 auto; }
+.msg { background: #161b28; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+.meta { font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
+.text { white-space: pre-wrap; word-break: break-word; }
+.system { font-style: italic; color: #9ca3af; }
+img, video { max-width: 100%; border-radius: 8px; margin-top: 6px; }
+audio { width: 100%; margin-top: 6px; }
+a { color: #818cf8; }
+"""
+
+            zf.writestr("messages.html", html)
+            zf.writestr("css/style.css", css)
+            zf.close()
+            zip_buffer.seek(0)
+
+            response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+            response["Content-Disposition"] = f'attachment; filename="{safe_name}_export.zip"'
+            return response
 
         lines = []
         for message in messages:
@@ -234,10 +458,16 @@ class MessageViewSet(viewsets.ModelViewSet):
                 duration = f", {message.call_duration_seconds}s" if message.call_duration_seconds else ""
                 body = f"[{kind} — {status_label}{duration}]"
             elif message.message_type == Message.VOICE:
-                body = "[Voice message]"
+                body = "[Voice message]" if include_voice else "[Voice message — excluded]"
             elif message.attachments.exists():
-                names = ", ".join(a.original_name or a.file_type for a in message.attachments.all())
-                body = f"[{message.message_type.capitalize()}: {names}]"
+                allowed_names = [a.original_name or a.file_type for a in message.attachments.all() if attachment_allowed(a)]
+                excluded_count = message.attachments.count() - len(allowed_names)
+                bits = []
+                if allowed_names:
+                    bits.append(", ".join(allowed_names))
+                if excluded_count:
+                    bits.append(f"{excluded_count} attachment(s) excluded")
+                body = f"[{message.message_type.capitalize()}: {'; '.join(bits)}]" if bits else f"[{message.message_type.capitalize()}]"
                 if message.content:
                     body = f"{message.content} {body}"
             else:
@@ -246,11 +476,6 @@ class MessageViewSet(viewsets.ModelViewSet):
             lines.append(f"[{timestamp}] {sender}: {body}")
 
         content = "\n".join(lines)
-        raw_name = conversation.name or "chat"
-        safe_name = "".join(
-            c for c in raw_name if c.isalnum() or c in (" ", "-", "_")
-        ).strip() or "chat"
-
         response = HttpResponse(content, content_type="text/plain; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="{safe_name}_export.txt"'
         return response

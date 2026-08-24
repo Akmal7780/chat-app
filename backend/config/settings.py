@@ -27,9 +27,11 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Defaults preserve today's dev behavior when unset — set DEBUG=False and a
+# real ALLOWED_HOSTS list in .env before deploying anywhere but localhost.
+DEBUG = env.bool("DEBUG", default=True)
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
 
 # Application definition
@@ -311,6 +313,10 @@ AWS_S3_REGION_NAME = env("MINIO_REGION")
 AWS_S3_ADDRESSING_STYLE = "path"
 AWS_S3_SIGNATURE_VERSION = "s3v4"
 
+# Total per-file cap for chat uploads (chunk size is already capped separately
+# in services.upload_part) — configurable per deployment.
+MAX_UPLOAD_SIZE = env.int("MAX_UPLOAD_SIZE_MB", default=500) * 1024 * 1024
+
 AWS_QUERYSTRING_AUTH = True
 
 AWS_S3_FILE_OVERWRITE = False
@@ -331,3 +337,27 @@ CELERY_BEAT_SCHEDULE = {
 PUBLIC_MINIO_URL = "http://localhost:9004"
 
 DEEPSEEK_API_KEY = env("DEEPSEEK_API_KEY")
+
+# Optional error monitoring — silently disabled when SENTRY_DSN is unset,
+# so this is a no-op for local dev unless you opt in via .env.
+SENTRY_DSN = env("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration(), CeleryIntegration()],
+        traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.1),
+        environment=env("SENTRY_ENVIRONMENT", default="development"),
+        send_default_pii=False,
+    )
+
+# Web Push (VAPID) — generate a keypair with:
+#   python manage.py generate_vapid_keys
+# and put the public/private keys in .env. Silently disabled (no push sent,
+# no crash) if unset.
+VAPID_PUBLIC_KEY = env("VAPID_PUBLIC_KEY", default="")
+VAPID_PRIVATE_KEY = env("VAPID_PRIVATE_KEY", default="")
+VAPID_ADMIN_EMAIL = env("VAPID_ADMIN_EMAIL", default="admin@example.com")

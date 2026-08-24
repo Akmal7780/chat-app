@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from "react"
+import toast from "react-hot-toast"
 import api from "../api/axios"
 import "./MessageInput.css"
 import { lazy, Suspense } from "react"
+import { getDraft, setDraft, clearDraft } from "../utils/drafts"
 
 const EmojiPicker = lazy(() => import("emoji-picker-react"))
 function MessageInput({
@@ -41,6 +43,84 @@ function MessageInput({
   const [showAiMenu, setShowAiMenu] = useState(false)
   const [loadingAi, setLoadingAi] = useState(false)
   const suggestionsRequestRef = useRef(0)
+
+  // Draft — restore whatever was typed-but-unsent for this conversation
+  // whenever it changes (also fixes a pre-existing leak where switching
+  // conversations mid-type left the old text sitting in the box).
+  const draftSaveTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    setMessage(getDraft(conversation?.id))
+  }, [conversation?.id])
+
+  // @mention autocomplete — only meaningful in multi-member chats.
+  const [conversationMembers, setConversationMembers] = useState([])
+  const [mentionQuery, setMentionQuery] = useState(null)
+
+  useEffect(() => {
+    setConversationMembers([])
+    setMentionQuery(null)
+    if (!conversation?.id || (conversation.type !== "group" && conversation.type !== "channel")) return
+
+    api.get(`/conversations/${conversation.id}/members/`)
+      .then((res) => setConversationMembers(res.data))
+      .catch((err) => console.error("Mention members error:", err))
+  }, [conversation?.id, conversation?.type])
+
+  const mentionMatches =
+    mentionQuery === null
+      ? []
+      : conversationMembers
+          .filter((m) => m.user !== currentUser?.id)
+          .filter((m) => m.username?.toLowerCase().includes(mentionQuery.toLowerCase()))
+          .slice(0, 6)
+
+  // Selection-based format toolbar (Bold/Italic/Code) — wraps the current
+  // textarea selection with the matching markdown-style markers, which
+  // renderFormattedContent (MessageList.jsx) turns into real <strong>/<em>/
+  // <code> on render.
+  const [hasSelection, setHasSelection] = useState(false)
+
+  const handleTextSelect = () => {
+    const el = textareaRef.current
+    if (!el) return
+    setHasSelection(el.selectionStart !== el.selectionEnd)
+  }
+
+  const applyFormat = (marker) => {
+    const el = textareaRef.current
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    if (start === end) return
+
+    const selected = message.slice(start, end)
+    const newValue = message.slice(0, start) + marker + selected + marker + message.slice(end)
+    setMessage(newValue)
+    setHasSelection(false)
+
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(start + marker.length, end + marker.length)
+    })
+  }
+
+  const handleSelectMention = (username) => {
+    const cursor = textareaRef.current?.selectionStart ?? message.length
+    const before = message.slice(0, cursor)
+    const after = message.slice(cursor)
+    const atIndex = before.lastIndexOf("@")
+    const newValue = `${before.slice(0, atIndex)}@${username} ${after}`
+
+    setMessage(newValue)
+    setMentionQuery(null)
+
+    requestAnimationFrame(() => {
+      const pos = atIndex + username.length + 2
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(pos, pos)
+    })
+  }
 
   // Auto-resize textarea
   useEffect(() => {
@@ -139,16 +219,30 @@ const getSuggestions = async () => {
     if (onTyping && value.trim()) {
       onTyping()
     }
+
+    const conversationId = conversation?.id
+    clearTimeout(draftSaveTimeoutRef.current)
+    draftSaveTimeoutRef.current = setTimeout(() => {
+      setDraft(conversationId, value)
+    }, 400)
+
+    const cursor = e.target.selectionStart
+    const before = value.slice(0, cursor)
+    const atMatch = before.match(/(?:^|\s)@(\w*)$/)
+    setMentionQuery(atMatch ? atMatch[1] : null)
   }
 
   const handleSend = () => {
     if ((!message.trim() && !selectedFile) || !isConnected) return
+
+    clearTimeout(draftSaveTimeoutRef.current)
 
     if (selectedFile) {
       // If a file is selected, first send the file
       handleFileUpload(selectedFile)
     } else {
       onSendMessage(message,[], replyMessage)
+      clearDraft(conversation?.id)
       setMessage("")
       setShowEmojiPicker(false)
       onCancelReply?.() // Clear reply
@@ -156,14 +250,20 @@ const getSuggestions = async () => {
   }
 
   const handleKeyDown = (e) => {
+    if (mentionMatches.length > 0 && (e.key === "Enter" || e.key === "Tab")) {
+      e.preventDefault()
+      handleSelectMention(mentionMatches[0].username)
+      return
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
       setShowEmojiPicker(false)
     }
     if (e.key === "Escape") {
-  setShowEmojiPicker(false)
-}
+      setShowEmojiPicker(false)
+      setMentionQuery(null)
+    }
   }
 
   // File selection
@@ -316,6 +416,12 @@ const handleFileUpload = async (file, { messageType } = {}) => {
 
   } catch (error) {
     console.error("❌ Upload error:", error)
+
+    const data = error.response?.data
+    const message =
+      (Array.isArray(data) ? data[0] : data?.detail || data?.error) ||
+      "Upload failed"
+    toast.error(message)
 
     onFileUploaded?.({
       ...tempMessage,
@@ -625,11 +731,39 @@ const handleRewrite = (tone) =>
 
         {/* Text input area */}
         <div className="text-input-wrapper">
+          {hasSelection && mentionMatches.length === 0 && (
+            <div className="format-toolbar">
+              <button type="button" title="Bold" onClick={() => applyFormat("**")}>
+                <b>B</b>
+              </button>
+              <button type="button" title="Italic" onClick={() => applyFormat("__")}>
+                <i>I</i>
+              </button>
+              <button type="button" title="Code" onClick={() => applyFormat("`")}>
+                {"</>"}
+              </button>
+            </div>
+          )}
+          {mentionMatches.length > 0 && (
+            <div className="mention-dropdown">
+              {mentionMatches.map((m) => (
+                <button
+                  key={m.user}
+                  type="button"
+                  className="mention-dropdown-item"
+                  onClick={() => handleSelectMention(m.username)}
+                >
+                  @{m.username}
+                </button>
+              ))}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={message}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onSelect={handleTextSelect}
             placeholder={
               !isConnected
                 ? "Connecting..."
@@ -768,6 +902,7 @@ const handleRewrite = (tone) =>
           <span>Reconnecting...</span>
         </div>
       )} */}
+
     </div>
   )
 }

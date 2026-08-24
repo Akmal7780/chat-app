@@ -3,8 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 
-from .serializers import SuggestReplySerializer,ChatSummarySerializer,TranslateSerializer,GrammarFixSerializer,RewriteSerializer
-from .services import generate_reply,summarize_chat,translate_message,grammar_fix,rewrite_message
+from .serializers import SuggestReplySerializer,ChatSummarySerializer,TranslateSerializer,GrammarFixSerializer,RewriteSerializer,ChatSearchSerializer
+from .services import generate_reply,summarize_chat,translate_message,grammar_fix,rewrite_message,search_chat
 
 
 class SuggestReplyAPIView(APIView):
@@ -86,6 +86,27 @@ class GrammarFixAPIView(APIView):
         return Response(
             {
                 "corrected_text": corrected_text
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class ChatSearchAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ChatSearchSerializer(data=request.data)
+
+        serializer.is_valid(raise_exception=True)
+
+        answer = search_chat(
+            serializer.validated_data["messages"],
+            serializer.validated_data["question"],
+        )
+
+        return Response(
+            {
+                "answer": answer
             },
             status=status.HTTP_200_OK
         )

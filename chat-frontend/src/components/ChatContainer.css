@@ -154,10 +154,74 @@
   margin-left: 0;
 }
 
+/* Same reasoning for a second right-aligned icon button (Ask AI) sitting
+   right after the first (Summarize) — only the first should carry the
+   auto margin that pushes the whole group to the right. */
+.summarize-btn + .summarize-btn {
+  margin-left: 0;
+}
+
 /* This button sits before .search-wrapper, which also carries margin-left:auto;
    only the first one in DOM order needs it to push the pair to the right. */
 .summarize-btn + .search-wrapper {
   margin-left: 0;
+}
+
+/* Header kebab (⋮) menu — wraps a .summarize-btn so it needs its own
+   overrides for the same "only the first right-aligned button gets the
+   auto margin" logic used above. */
+.chat-header-menu-wrapper {
+  position: relative;
+}
+
+.chat-header-menu-wrapper .summarize-btn {
+  margin-left: 0;
+}
+
+.chat-header-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+}
+
+.chat-header-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 210px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-obsidian-card);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-header-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  color: var(--on-surface);
+  font-size: 13.5px;
+  text-align: left;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+
+.chat-header-menu button:hover {
+  background: var(--border-obsidian-light);
+}
+
+.chat-header-menu button.danger {
+  color: #ef4444;
 }
 
 /* ==========================================================================
@@ -217,6 +281,48 @@
 .summary-loading {
   color: var(--text-muted);
   font-style: italic;
+}
+
+.ai-search-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.ai-search-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-md);
+  background: var(--border-obsidian-light);
+  color: var(--on-surface);
+  font-size: 13.5px;
+}
+
+.ai-search-input:focus {
+  outline: none;
+  border-color: var(--indigo-accent);
+}
+
+.ai-search-submit {
+  padding: 9px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--indigo-accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.ai-search-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.ai-search-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pinned-message-banner {

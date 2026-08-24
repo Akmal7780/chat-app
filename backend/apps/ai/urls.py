@@ -5,6 +5,7 @@ from .views import (
     TranslateAPIView,
     GrammarFixAPIView,
     RewriteAPIView,
+    ChatSearchAPIView,
 )
 
 urlpatterns = [
@@ -34,5 +35,11 @@ urlpatterns = [
     "rewrite/",
     RewriteAPIView.as_view(),
     name="rewrite"
+),
+
+    path(
+    "search/",
+    ChatSearchAPIView.as_view(),
+    name="chat-search"
 ),
 ]

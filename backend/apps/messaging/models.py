@@ -18,6 +18,7 @@ class Message(models.Model):
     VOICE = "voice"
     CALL = "call"
     SYSTEM = "system"
+    POLL = "poll"
 
     MESSAGE_TYPES = (
         (TEXT, "Text"),
@@ -27,6 +28,7 @@ class Message(models.Model):
         (VOICE, "Voice"),
         (CALL, "Call"),
         (SYSTEM, "System"),
+        (POLL, "Poll"),
     )
 
     CALL_MISSED_OR_CANCELED = "missed_or_canceled"
@@ -228,3 +230,80 @@ class Reaction(models.Model):
 
     def __str__(self):
         return f"{self.user} reacted {self.emoji} to {self.message_id}"
+
+
+# =========================
+# POLLS
+# =========================
+class Poll(models.Model):
+
+    message = models.OneToOneField(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="poll"
+    )
+
+    question = models.CharField(max_length=255)
+    description = models.CharField(max_length=500, blank=True, default="")
+    allows_multiple = models.BooleanField(default=False)
+    is_closed = models.BooleanField(default=False)
+    anonymous = models.BooleanField(default=False)
+    allow_adding_options = models.BooleanField(default=False)
+    allow_revoting = models.BooleanField(default=True)
+    shuffle_options = models.BooleanField(default=False)
+    quiz_mode = models.BooleanField(default=False)
+    closes_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.question
+
+
+class PollOption(models.Model):
+
+    poll = models.ForeignKey(
+        Poll,
+        on_delete=models.CASCADE,
+        related_name="options"
+    )
+
+    text = models.CharField(max_length=100)
+    order = models.PositiveSmallIntegerField(default=0)
+    is_correct = models.BooleanField(default=False)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="added_poll_options",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.text
+
+
+class PollVote(models.Model):
+
+    option = models.ForeignKey(
+        PollOption,
+        on_delete=models.CASCADE,
+        related_name="votes"
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="poll_votes"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("option", "user")
+
+    def __str__(self):
+        return f"{self.user} voted for {self.option_id}"

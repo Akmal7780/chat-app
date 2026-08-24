@@ -4,7 +4,43 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Notification
+from django.conf import settings
+
+from .models import Notification, PushSubscription
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def push_public_key(request):
+    return Response({"public_key": settings.VAPID_PUBLIC_KEY})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_subscribe(request):
+    endpoint = request.data.get("endpoint")
+    keys = request.data.get("keys") or {}
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+
+    if not endpoint or not p256dh or not auth:
+        return Response({"error": "endpoint and keys are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
+    )
+
+    return Response({"status": "ok"})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def push_unsubscribe(request):
+    endpoint = request.data.get("endpoint")
+    if endpoint:
+        PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
+    return Response({"status": "ok"})
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

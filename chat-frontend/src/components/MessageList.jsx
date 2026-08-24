@@ -2,9 +2,174 @@ import { useEffect, useRef, useState } from "react"
 import MessageReactions from "./MessageReactions"
 import LinkPreviewCard from "./LinkPreviewCard"
 import MessageContextMenu from "./MessageContextMenu"
-import { extractFirstUrl } from "../utils/linkify"
+import { extractFirstUrl, URL_REGEX } from "../utils/linkify"
 import api from "../api/axios"
 import "./MessageList.css" // Import the CSS file
+
+// Renders **bold**, __italic__, `code`, bare URLs, and @mention tokens as
+// real React nodes (never dangerouslySetInnerHTML — text stays through
+// React's normal escaping, so this can't reopen the search-highlight XSS
+// class of bug). @mention highlighting is purely cosmetic here; the actual
+// notification match is validated server-side against real participants.
+const TOKEN_REGEX = new RegExp(
+  `(\\*\\*.+?\\*\\*|__.+?__|\`[^\`]+?\`|@[\\w.+-]+|${URL_REGEX.source})`,
+  "g"
+)
+
+function renderFormattedContent(text) {
+  if (!text) return text
+
+  return text.split(TOKEN_REGEX).map((part, i) => {
+    if (!part) return null
+
+    if (/^\*\*.+\*\*$/.test(part)) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>
+    }
+    if (/^__.+__$/.test(part)) {
+      return <em key={i}>{part.slice(2, -2)}</em>
+    }
+    if (/^`[^`]+`$/.test(part)) {
+      return <code key={i} className="message-inline-code">{part.slice(1, -1)}</code>
+    }
+    if (/^@[\w.+-]+$/.test(part)) {
+      return <span key={i} className="message-list-mention">{part}</span>
+    }
+    if (URL_REGEX.test(part)) {
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="message-list-link">
+          {part}
+        </a>
+      )
+    }
+    return part
+  })
+}
+
+// Deterministic per-viewer shuffle so "Shuffle Options" doesn't reorder on
+// every re-render — same poll + same viewer always yields the same order.
+function shuffleOptionsFor(options, seed) {
+  let s = seed >>> 0
+  const rand = () => {
+    s = (s * 1664525 + 1013904223) >>> 0
+    return s / 4294967296
+  }
+  const arr = [...options]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+function PollBlock({ message, currentUser }) {
+  const poll = message.poll
+  const [voting, setVoting] = useState(false)
+  const [addingOption, setAddingOption] = useState(false)
+  const [newOptionText, setNewOptionText] = useState("")
+  if (!poll) return null
+
+  const myVotes = new Set(
+    poll.options.filter((o) => o.voter_ids.includes(currentUser?.id)).map((o) => o.id)
+  )
+  const hasVoted = myVotes.size > 0
+  const locked = poll.is_closed || (hasVoted && !poll.allow_revoting)
+  const revealCorrect = poll.quiz_mode && hasVoted
+
+  const displayOptions = poll.shuffle_options
+    ? shuffleOptionsFor(poll.options, (poll.id || 0) * 2654435761 + (currentUser?.id || 0))
+    : poll.options
+
+  const handleVote = async (optionId) => {
+    if (voting || locked) return
+    setVoting(true)
+    try {
+      await api.post(`/messages/${message.id}/vote/`, { option_ids: [optionId] })
+    } catch (err) {
+      console.error("Vote error:", err)
+    } finally {
+      setVoting(false)
+    }
+  }
+
+  const handleAddOption = async () => {
+    const text = newOptionText.trim()
+    if (!text) return
+    setAddingOption(true)
+    try {
+      await api.post(`/messages/${message.id}/add-option/`, { text })
+      setNewOptionText("")
+    } catch (err) {
+      console.error("Add poll option error:", err)
+    } finally {
+      setAddingOption(false)
+    }
+  }
+
+  return (
+    <div className="message-list-poll">
+      <div className="message-list-poll-question">
+        {poll.quiz_mode ? "❓" : "📊"} {poll.question}
+      </div>
+      {poll.description && (
+        <div className="message-list-poll-description">{poll.description}</div>
+      )}
+      <div className="message-list-poll-options">
+        {displayOptions.map((option) => {
+          const percent = poll.total_votes > 0 ? Math.round((option.vote_count / poll.total_votes) * 100) : 0
+          const isMine = myVotes.has(option.id)
+          const quizClass = revealCorrect
+            ? option.is_correct
+              ? "correct"
+              : isMine
+                ? "incorrect"
+                : ""
+            : ""
+          return (
+            <button
+              key={option.id}
+              className={`message-list-poll-option ${isMine ? "voted" : ""} ${quizClass}`}
+              onClick={(e) => { e.stopPropagation(); handleVote(option.id) }}
+              disabled={voting || locked}
+            >
+              {hasVoted && (
+                <div className="message-list-poll-option-bar" style={{ width: `${percent}%` }} />
+              )}
+              <span className="message-list-poll-option-text">
+                {revealCorrect ? (option.is_correct ? "✅ " : isMine ? "❌ " : "") : isMine ? "✓ " : ""}
+                {option.text}
+              </span>
+              {hasVoted && <span className="message-list-poll-option-percent">{percent}%</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {poll.allow_adding_options && !poll.is_closed && (
+        <div className="message-list-poll-add-option">
+          <input
+            type="text"
+            placeholder="Add an option…"
+            value={newOptionText}
+            onChange={(e) => setNewOptionText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddOption()}
+            onClick={(e) => e.stopPropagation()}
+            disabled={addingOption}
+          />
+          <button onClick={(e) => { e.stopPropagation(); handleAddOption() }} disabled={addingOption || !newOptionText.trim()}>
+            Add
+          </button>
+        </div>
+      )}
+
+      <div className="message-list-poll-meta">
+        {poll.total_votes} vote{poll.total_votes !== 1 ? "s" : ""}
+        {poll.allows_multiple ? " · Multiple answers allowed" : ""}
+        {poll.anonymous ? " · Anonymous" : ""}
+        {poll.is_closed ? " · Closed" : ""}
+      </div>
+    </div>
+  )
+}
 
 function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, onForwardRequest, loading }) {
   const messagesEndRef = useRef(null)
@@ -451,7 +616,9 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                           </div>
                         )}
                         
-                        {msg.message_type === "call" ? (
+                        {msg.message_type === "poll" ? (
+                          <PollBlock message={msg} currentUser={currentUser} />
+                        ) : msg.message_type === "call" ? (
                           <div className="message-list-call-row">
                             <span className="message-list-call-icon">
                               {msg.call_is_video ? "🎥" : "📞"}
@@ -499,7 +666,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                                   </span>
                                 ) : (
                                 <>
-                                  <span>{msg.content}</span>
+                                  <span>{renderFormattedContent(msg.content)}</span>
 
                                   {msg.is_edited && (
                                     <span

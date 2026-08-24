@@ -667,6 +667,151 @@ background-color: var(--bg-obsidian);
   font-weight: 600;
 }
 
+.message-list-mention {
+  color: var(--indigo-accent);
+  font-weight: 600;
+}
+
+.message-list-poll {
+  min-width: 220px;
+  max-width: 280px;
+}
+
+.message-list-poll-question {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.message-list-poll-description {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 10px;
+}
+
+.message-list-poll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-list-poll-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.06);
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.message-list-poll-option:disabled {
+  cursor: default;
+}
+
+.message-list-poll-option.voted {
+  border-color: var(--indigo-accent);
+}
+
+.message-list-poll-option.correct {
+  border-color: #22c55e;
+}
+
+.message-list-poll-option.correct .message-list-poll-option-bar {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.message-list-poll-option.incorrect {
+  border-color: #ef4444;
+}
+
+.message-list-poll-option.incorrect .message-list-poll-option-bar {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.message-list-poll-option-bar {
+  position: absolute;
+  inset: 0;
+  background: rgba(99, 102, 241, 0.18);
+  z-index: 0;
+  transition: width 0.3s ease;
+}
+
+.message-list-poll-option-text {
+  position: relative;
+  z-index: 1;
+}
+
+.message-list-poll-option-percent {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.message-list-poll-meta {
+  margin-top: 8px;
+  font-size: 11.5px;
+  opacity: 0.7;
+}
+
+.message-list-poll-add-option {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-list-poll-add-option input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.06);
+  color: inherit;
+  font-size: 12.5px;
+}
+
+.message-list-poll-add-option button {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--indigo-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.message-list-poll-add-option button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message-inline-code {
+  background: rgba(127, 127, 127, 0.16);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "SF Mono", Consolas, "Cascadia Code", monospace;
+  font-size: 0.9em;
+}
+
+.message-list-link {
+  color: var(--indigo-accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
 /* Hint indicator */
 .message-list-hint-indicator {
   position: absolute;

@@ -5,6 +5,7 @@ import { useChats } from "../context/ChatsContext"
 import { useOnlineUsers } from "../context/OnlineUsersContext"
 import { formatChatTimestamp } from "../utils/formatTime"
 import { getAvatarColor } from "../utils/avatarColor"
+import { getDraft, onDraftUpdated } from "../utils/drafts"
 
 function ChatRow({ conversation, isActive, isOnline, onClick, menuOpen, onToggleMenu, onPinToggle, onMuteToggle }) {
   const isGroup = conversation.type === "group"
@@ -16,13 +17,26 @@ function ChatRow({ conversation, isActive, isOnline, onClick, menuOpen, onToggle
   const avatarUrl = isPrivate ? other?.avatar_url : conversation.avatar_url
 
   const lastMessage = conversation.last_message
+
+  const [draft, setDraftState] = useState(() => getDraft(conversation.id))
+  useEffect(() => {
+    setDraftState(getDraft(conversation.id))
+    return onDraftUpdated((updatedId) => {
+      if (String(updatedId) === String(conversation.id)) {
+        setDraftState(getDraft(conversation.id))
+      }
+    })
+  }, [conversation.id])
+
   const callPreview = (call) => {
     const icon = call.call_is_video ? "🎥" : "📞"
     if (call.call_status === "completed") return `${icon} Call`
     if (call.call_status === "declined") return `${icon} Declined call`
     return `${icon} Missed call`
   }
-  const preview = !lastMessage
+  const preview = draft
+    ? <><span className="chat-row-draft-label">Draft: </span>{draft}</>
+    : !lastMessage
     ? "No messages yet"
     : lastMessage.is_deleted
     ? "This message was deleted"

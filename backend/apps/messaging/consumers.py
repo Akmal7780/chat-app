@@ -552,6 +552,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "is_pinned": event["is_pinned"],
         }))
 
+    # 📊 POLL VOTE UPDATE
+    async def poll_updated(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "poll_updated",
+            "message_id": event["message_id"],
+            "poll": event["poll"],
+        }))
+
     async def send_notifications_background(self, message):
         await self.send_notifications_background_for(message, self.conversation_id)
 

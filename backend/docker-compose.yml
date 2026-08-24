@@ -100,7 +100,9 @@ services:
     image: redis:7
 
     ports:
-      - "6383:6379"
+      # Internal only — no legitimate reason for this to be reachable
+      # from outside the host.
+      - "127.0.0.1:6383:6379"
 
     volumes:
       - redis_data:/data
@@ -116,7 +118,10 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
 
     ports:
-      - "5436:5432"
+      # Internal only — the backend talks to Postgres over the Docker
+      # network; a host-exposed DB port is only useful for local admin
+      # tools, which can still connect via 127.0.0.1.
+      - "127.0.0.1:5436:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -133,8 +138,11 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
 
     ports:
+      # 9000 (S3 API) stays public — file URLs served to the browser point
+      # directly at PUBLIC_MINIO_URL (see .env). The admin console has no
+      # reason to be reachable from outside the host.
       - "9004:9000"
-      - "9005:9001"
+      - "127.0.0.1:9005:9001"
 
     volumes:
       - minio_data:/data
@@ -147,7 +155,8 @@ services:
     container_name: chat_clamav
 
     ports:
-      - "3314:3310"
+      # Internal only — only the backend/Celery workers talk to ClamAV.
+      - "127.0.0.1:3314:3310"
 
     volumes:
       - clamav_data:/var/lib/clamav
@@ -177,6 +186,8 @@ services:
       --max-port=49200
       --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
 
+    # Deliberately public (unlike the other infra services above) — a TURN
+    # relay only works if clients behind arbitrary NATs can reach it.
     ports:
       - "3478:3478/udp"
       - "3478:3478/tcp"

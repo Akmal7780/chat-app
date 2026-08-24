@@ -17,4 +17,9 @@ urlpatterns = [
 
     # 🔔 Delete notification
     path("<int:notification_id>/", views.delete_notification, name="delete_notification"),
+
+    # 📲 Web Push
+    path("push/public-key/", views.push_public_key, name="push_public_key"),
+    path("push/subscribe/", views.push_subscribe, name="push_subscribe"),
+    path("push/unsubscribe/", views.push_unsubscribe, name="push_unsubscribe"),
 ]

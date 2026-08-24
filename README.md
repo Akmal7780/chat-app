@@ -17,20 +17,26 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 ### 💬 Messaging
 * Real-time messaging over WebSocket (Django Channels)
 * Message status: sent / delivered / read
-* Reply system, edit & delete messages, emoji reactions
+* Reply system, edit & delete messages, emoji reactions, pin/unpin
 * File, image, and voice message sharing with chunked/multipart upload for large files
 * Link preview cards
+* Rich-text formatting (**bold**, *italic*, `inline code`, auto-linked URLs) with a selection-triggered formatting toolbar
+* @mention autocomplete with highlighting and a notification that bypasses mute
+* Per-conversation message drafts, restored automatically when you switch back
 * Per-message **AI translate** button + language preference toggle
 * Full-text message search within a conversation (XSS-safe highlighting)
+* **AI-powered chat search** — ask a natural-language question and get an answer grounded in that conversation's history (DeepSeek)
+* **Polls** — single- or multiple-choice, quiz mode with a post-vote correct-answer reveal, anonymous voting, participant-added options, revoting on/off, shuffled option order, and time-limited polls, all synced live over WebSocket
 * Auto-delete messages after a configurable interval (Celery Beat periodic task)
-* Export a full chat history to a downloadable `.txt` file
-* Desktop & sound notifications, typing indicator, online/offline presence
+* Export chat history as a downloadable, self-contained `.zip` (HTML transcript + real photos/videos/files/voice folders) or plain `.txt`, with content-type, size-limit, and date-range filters
+* Desktop, sound & **Web Push** notifications (delivered via a Service Worker even when the tab/app is closed), typing indicator, online/offline presence
 
 ### 👥 Groups & Channels
 * Group creation with a real member-management panel (mute, add members, manage, leave — admin-gated)
 * Channel creation, editing (name/avatar/description/public-private/invite link) restricted to admins/owner
 * Public channel discovery — search and join open channels
 * Custom folders — create, delete, and assign chats/channels to a folder
+* Chat header quick-actions menu — mute/unmute, view group/channel info, manage (admin-gated), create a poll, export chat history, report the chat to moderators, clear your own local history, leave
 
 ### 📞 Calls
 * 1:1 audio & video calls over WebRTC
@@ -46,12 +52,20 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * Real user blocking, enforced server-side on both conversation creation and message send
 * Antivirus scanning of every uploaded file via **ClamAV** (fails closed if the scanner is unreachable)
 * Rate limiting (DRF throttling) on login, 2FA verification, messaging, and uploads
+* `DEBUG` and `ALLOWED_HOSTS` are environment-driven, not hardcoded, so a misconfigured deploy can't accidentally ship debug mode
+* Server-enforced total upload size cap (`MAX_UPLOAD_SIZE_MB`), independent of any client-side check
+* Postgres, Redis, MinIO console, and ClamAV ports are bound to `127.0.0.1` in Docker Compose — never exposed on the host network
+* Optional **Sentry** error monitoring on both backend and frontend (silently disabled when no DSN is configured)
 
 ### 🤖 AI (DeepSeek)
 * Conversation summarization
 * Smart reply suggestions
 * Per-message translation
 * Grammar correction
+
+### 📲 Progressive Web App
+* Installable on desktop and mobile (manifest + Service Worker) — runs like a native app, outside the browser chrome
+* Background Web Push delivery survives a closed tab; the Service Worker suppresses duplicate notifications while the chat is already focused
 
 ### 🎨 Customization
 * Four themes — Classic, Day, Tinted, Night — each with a genuinely distinct color palette
@@ -84,7 +98,11 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 ### Authentication & AI
 * JWT (SimpleJWT) with custom session-aware revocation
 * Google OAuth 2.0
-* DeepSeek API (AI features)
+* DeepSeek API (AI features, including AI-powered chat search)
+
+### Notifications & Monitoring
+* Web Push (`pywebpush`, VAPID) delivered through a Service Worker
+* Sentry (optional, DSN-gated) for backend and frontend error monitoring
 
 ---
 
@@ -319,8 +337,9 @@ VITE_TURN_PASSWORD=your_turn_password
 
 ## 📌 Roadmap
 
-* 🔍 AI-powered in-chat search (semantic search over conversation history)
-* 👥 Group video calls (currently 1:1 only)
+* 🎙️ Voice-message-to-text transcription (blocked on a paid STT API key — DeepSeek doesn't support audio)
+* 👥 Group video calls (currently 1:1 only — needs a mesh/SFU architecture)
+* 🛡️ Full admin moderation console (a banned-word filter, plus a review UI for the reports the app already collects)
 * 📱 Native mobile app (React Native)
 * 🌍 Additional UI languages beyond English/Russian
 

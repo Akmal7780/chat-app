@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.utils import timezone
 
-from .models import Conversation, ConversationParticipant, ChatFolder
+from .models import Conversation, ConversationParticipant, ChatFolder, ConversationReport
 from .serializers import ConversationSerializer, ConversationParticipantSerializer, ChatFolderSerializer
 from . import services
 
@@ -244,6 +245,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
         ).delete()
 
         return Response({"message": "Left conversation"})
+
+    @action(detail=True, methods=["post"], url_path="clear-history")
+    def clear_history(self, request, pk=None):
+        return self._set_own_participant_flag(request, "cleared_before", timezone.now())
+
+    @action(detail=True, methods=["post"])
+    def report(self, request, pk=None):
+        conversation = self.get_object()
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"error": "A reason is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        ConversationReport.objects.create(
+            conversation=conversation,
+            reporter=request.user,
+            reason=reason[:1000],
+        )
+        return Response({"message": "Report submitted"}, status=status.HTTP_201_CREATED)
 
     # ===============================
     # PUBLIC CHANNEL DISCOVERY

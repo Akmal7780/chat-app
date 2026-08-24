@@ -67,6 +67,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "call_is_video": event.get("call_is_video"),
 
             "image": event.get("image"),
+            "is_mention": event.get("is_mention", False),
 
             # 🔥 unread count (live update)
             "unread_count": await self.get_unread_count()

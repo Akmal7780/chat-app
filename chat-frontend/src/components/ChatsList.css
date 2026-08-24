@@ -228,6 +228,11 @@
   color: var(--indigo-accent);
 }
 
+.chat-row-draft-label {
+  color: #ef4444;
+  font-weight: 600;
+}
+
 .saved-messages-icon {
   background: var(--primary-gradient);
   font-size: 20px;

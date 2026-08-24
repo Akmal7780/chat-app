@@ -33,6 +33,21 @@ class TranslateSerializer(serializers.Serializer):
 class GrammarFixSerializer(serializers.Serializer):
     message = serializers.CharField(max_length=1000)
 
+class ChatSearchSerializer(serializers.Serializer):
+    messages = serializers.ListField(
+        child=serializers.CharField(),
+        min_length=1
+    )
+    question = serializers.CharField(max_length=500)
+
+    def validate_question(self, value):
+        if len(value.strip()) < 1:
+            raise serializers.ValidationError(
+                "Savol bo'sh bo'lishi mumkin emas."
+            )
+        return value
+
+
 class RewriteSerializer(serializers.Serializer):
     message = serializers.CharField(max_length=1000)
     tone = serializers.ChoiceField(

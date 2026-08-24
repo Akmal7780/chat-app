@@ -3,6 +3,7 @@ from .models import Message,Attachment,Reaction
 
 from utils.minio import get_s3
 from django.conf import settings
+from django.utils import timezone
 class AttachmentSerializer(serializers.ModelSerializer):
 
     file_url = serializers.SerializerMethodField()
@@ -54,6 +55,7 @@ class MessageSerializer(serializers.ModelSerializer):
     reply_to = serializers.SerializerMethodField()
     forwarded_from = serializers.SerializerMethodField()
     reactions = serializers.SerializerMethodField()
+    poll = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
 
     class Meta:
@@ -67,6 +69,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "content",
             "attachments",
             "reactions",
+            "poll",
             "reply_to",
             "forwarded_from",
             "is_edited",
@@ -129,6 +132,63 @@ class MessageSerializer(serializers.ModelSerializer):
             }
             for r in obj.reactions.all()
         ]
+
+    # =========================
+    # POLL
+    # =========================
+    def get_poll(self, obj):
+        if obj.message_type != Message.POLL or not hasattr(obj, "poll"):
+            return None
+
+        request = self.context.get("request")
+        requesting_user_id = getattr(getattr(request, "user", None), "id", None)
+
+        poll = obj.poll
+        options = []
+        total_votes = 0
+        my_voted_option_ids = set()
+
+        for option in poll.options.all():
+            all_voter_ids = list(option.votes.values_list("user_id", flat=True))
+            total_votes += len(all_voter_ids)
+            if requesting_user_id in all_voter_ids:
+                my_voted_option_ids.add(option.id)
+            options.append({
+                "id": option.id,
+                "text": option.text,
+                "vote_count": len(all_voter_ids),
+                # Anonymous polls only reveal the requesting user's own vote,
+                # never other participants' identities.
+                "voter_ids": (
+                    [requesting_user_id] if requesting_user_id in all_voter_ids else []
+                ) if poll.anonymous else all_voter_ids,
+                "added_by": option.added_by_id,
+            })
+
+        has_voted = len(my_voted_option_ids) > 0
+        # Quiz correctness is a spoiler — only reveal is_correct once the
+        # requesting user has actually cast a vote.
+        if poll.quiz_mode and has_voted:
+            for option, opt_data in zip(poll.options.all(), options):
+                opt_data["is_correct"] = option.is_correct
+
+        effective_closed = poll.is_closed or bool(poll.closes_at and timezone.now() >= poll.closes_at)
+
+        return {
+            "id": poll.id,
+            "question": poll.question,
+            "description": poll.description,
+            "allows_multiple": poll.allows_multiple,
+            "is_closed": effective_closed,
+            "anonymous": poll.anonymous,
+            "allow_adding_options": poll.allow_adding_options,
+            "allow_revoting": poll.allow_revoting,
+            "shuffle_options": poll.shuffle_options,
+            "quiz_mode": poll.quiz_mode,
+            "closes_at": poll.closes_at,
+            "total_votes": total_votes,
+            "options": options,
+        }
 
     # =========================
     # STATUS

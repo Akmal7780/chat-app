@@ -1,10 +1,40 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import toast from "react-hot-toast"
 import { getNotificationPrefs, setNotificationPrefs } from "../utils/notificationPrefs"
 import { requestDesktopPermission, playNotificationSound } from "../utils/notify"
+import { isPushSupported, subscribeToPush, unsubscribeFromPush, getPushSubscription } from "../utils/push"
 
 function NotificationsSettingsView({ onBack }) {
   const [prefs, setPrefs] = useState(() => getNotificationPrefs())
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+
+  useEffect(() => {
+    getPushSubscription().then((sub) => setPushEnabled(!!sub))
+  }, [])
+
+  const handlePushToggle = async () => {
+    setPushBusy(true)
+    try {
+      if (pushEnabled) {
+        await unsubscribeFromPush()
+        setPushEnabled(false)
+      } else {
+        const sub = await subscribeToPush()
+        if (!sub) {
+          toast.error("Notification permission was not granted")
+        } else {
+          setPushEnabled(true)
+          toast.success("Push notifications enabled")
+        }
+      }
+    } catch (err) {
+      console.error("Push toggle error:", err)
+      toast.error(err.message || "Could not update push notifications")
+    } finally {
+      setPushBusy(false)
+    }
+  }
 
   const update = (patch) => {
     setPrefs(setNotificationPrefs(patch))
@@ -53,6 +83,25 @@ function NotificationsSettingsView({ onBack }) {
             <span className="settings-switch-slider" />
           </label>
         </div>
+
+        {isPushSupported() && (
+          <div className="settings-list-item settings-list-toggle">
+            <span className="settings-list-icon">📲</span>
+            <div className="settings-list-item-text">
+              <span>Push notifications</span>
+              <small>Real notifications even when this tab or browser is closed</small>
+            </div>
+            <label className="settings-switch">
+              <input
+                type="checkbox"
+                checked={pushEnabled}
+                disabled={pushBusy}
+                onChange={handlePushToggle}
+              />
+              <span className="settings-switch-slider" />
+            </label>
+          </div>
+        )}
 
         <div className="settings-list-item settings-list-toggle">
           <span className="settings-list-icon">🔠</span>

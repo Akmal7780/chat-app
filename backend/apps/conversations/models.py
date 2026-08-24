@@ -110,6 +110,12 @@ class ConversationParticipant(models.Model):
         blank=True,
         null=True
     )
+
+    cleared_before = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Messages created before this timestamp are hidden from this user's view (Telegram-style 'Clear history')."
+    )
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -124,6 +130,34 @@ class ConversationParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user} in {self.conversation}"
+
+
+class ConversationReport(models.Model):
+
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name="reports"
+    )
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="conversation_reports"
+    )
+
+    reason = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["conversation"]),
+            models.Index(fields=["resolved"]),
+        ]
+
+    def __str__(self):
+        return f"Report on {self.conversation} by {self.reporter}"
 
 
 class ChatFolder(models.Model):

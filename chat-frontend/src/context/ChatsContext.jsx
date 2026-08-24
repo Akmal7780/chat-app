@@ -202,7 +202,9 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
       const convType = conv?.type || data.conversation_type || "private"
       const prefs = getNotificationPrefs()
       const categoryEnabled = convType === "group" ? prefs.notifyGroups : prefs.notifyPrivate
-      const shouldAlert = !conv?.is_muted && categoryEnabled
+      // A direct @mention alerts even in a muted chat — matches Telegram's
+      // real behavior (mute silences the general stream, not a direct call-out).
+      const shouldAlert = data.is_mention || (!conv?.is_muted && categoryEnabled)
 
       if (!shouldAlert) return
 
