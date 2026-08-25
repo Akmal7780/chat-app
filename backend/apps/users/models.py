@@ -158,7 +158,7 @@ class UserSession(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
-    last_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
 
     revoked = models.BooleanField(default=False)
 

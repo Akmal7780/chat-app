@@ -12,6 +12,7 @@ from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 
 from django.contrib.auth import get_user_model, authenticate
+from django.utils import timezone
 from django.contrib.auth.hashers import make_password, check_password
 from django.shortcuts import get_object_or_404
 from rest_framework.pagination import PageNumberPagination
@@ -28,11 +29,32 @@ def _create_session(user, access_token_str, request):
         jti = AccessToken(access_token_str)["jti"]
     except Exception:
         return
+
+    device = services.parse_device(request.META.get("HTTP_USER_AGENT", ""))
+    ip_address = services.get_client_ip(request)
+
+    # Re-logging in from the same device/IP reuses its existing row instead
+    # of piling up a new one every time (device is a coarse UA summary, e.g.
+    # "Chrome on Windows" — good enough to tell real devices apart without a
+    # full fingerprinting library). The old jti is simply orphaned; per
+    # SessionAwareJWTAuthentication's fail-open design that's harmless — it
+    # just rides out its own short remaining lifetime as an unrevocable but
+    # still-valid token, same as any token issued before session tracking existed.
+    existing = UserSession.objects.filter(
+        user=user, device=device, ip_address=ip_address, revoked=False
+    ).first()
+
+    if existing:
+        existing.jti = jti
+        existing.last_seen_at = timezone.now()
+        existing.save(update_fields=["jti", "last_seen_at"])
+        return
+
     UserSession.objects.create(
         user=user,
         jti=jti,
-        device=services.parse_device(request.META.get("HTTP_USER_AGENT", "")),
-        ip_address=services.get_client_ip(request),
+        device=device,
+        ip_address=ip_address,
     )
 
 
