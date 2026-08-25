@@ -85,6 +85,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.channel_name
     )
 
+        # ACTIVE_USERS marks this user as "currently viewing" a conversation
+        # so background notifications skip them (see send_notifications_
+        # background_for) — without clearing it here, leaving the chat (or
+        # closing the tab) left the flag stuck forever, silently suppressing
+        # every future real-time notification for that conversation even
+        # though the user was no longer looking at it.
+        user = getattr(self, "user", None)
+        if user and getattr(user, "is_authenticated", False):
+            if ACTIVE_USERS.get(user.id) == int(self.conversation_id):
+                del ACTIVE_USERS[user.id]
+
 
 
     async def receive(self, text_data):

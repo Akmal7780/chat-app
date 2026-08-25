@@ -84,6 +84,19 @@ def complete_upload(user, request, *, conversation_id, file_name, key, upload_id
     _require_participant(user, conversation_id)
     _require_own_key(user, key)
 
+    allowed_overrides = {choice for choice, _ in Message.MESSAGE_TYPES}
+    if message_type in allowed_overrides:
+        file_type = message_type
+    else:
+        file_type = get_file_type(file_name) or "file"
+
+    if file_type == "voice":
+        conversation = Conversation.objects.get(id=conversation_id)
+        if conversation.type == Conversation.PRIVATE:
+            other = conversation.participants.exclude(user=user).select_related("user").first()
+            if other and other.user.voice_messages_visibility == other.user.VISIBILITY_NOBODY:
+                raise ValidationError("This user doesn't accept voice messages")
+
     s3 = get_s3()
     s3.complete_multipart_upload(
         Bucket=settings.AWS_STORAGE_BUCKET_NAME,
@@ -91,12 +104,6 @@ def complete_upload(user, request, *, conversation_id, file_name, key, upload_id
         UploadId=upload_id,
         MultipartUpload={"Parts": parts},
     )
-
-    allowed_overrides = {choice for choice, _ in Message.MESSAGE_TYPES}
-    if message_type in allowed_overrides:
-        file_type = message_type
-    else:
-        file_type = get_file_type(file_name) or "file"
 
     message = Message.objects.create(
         conversation_id=conversation_id,
@@ -515,7 +522,8 @@ def global_search_messages(user, query, page=1, page_size=20):
             ).exclude(user=user).select_related("user").first()
             other_participant_cache[conv.id] = other.user if other else None
         other_user = other_participant_cache[conv.id]
-        return (other_user.username if other_user else conv.name), (other_user.id if other_user else None)
+        display_name = (other_user.full_name or "Unknown") if other_user else conv.name
+        return display_name, (other_user.id if other_user else None)
 
     results = []
     for m in page_matches:
@@ -528,6 +536,7 @@ def global_search_messages(user, query, page=1, page_size=20):
             "other_user_id": other_user_id,
             "sender_id": m.sender_id,
             "sender_username": m.sender.username,
+            "sender_display_name": m.sender.full_name or "Unknown",
             "content": m.content,
             "created_at": m.created_at.isoformat(),
         })

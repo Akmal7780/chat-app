@@ -44,16 +44,23 @@ class UserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     last_seen = serializers.SerializerMethodField()
     is_blocked_by_me = serializers.SerializerMethodField()
+    personal_channel_info = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id",
             "username",
+            "full_name",
             "email",
             "avatar",
             "avatar_url",
             "bio",
+            "phone_number",
+            "birthday",
+            "name_color",
+            "personal_channel",
+            "personal_channel_info",
             "last_login",
             "date_joined",
             "last_seen",
@@ -61,7 +68,55 @@ class UserSerializer(serializers.ModelSerializer):
             "is_staff",
             "last_seen_visibility",
             "avatar_visibility",
+            "bio_visibility",
+            "messages_visibility",
+            "calls_visibility",
+            "voice_messages_visibility",
+            "invites_visibility",
+            "forwarded_messages_visibility",
+            "phone_visibility",
+            "birthday_visibility",
         ]
+        extra_kwargs = {
+            "personal_channel": {"write_only": True, "required": False, "allow_null": True},
+        }
+
+    def validate_personal_channel(self, value):
+        if value is None:
+            return value
+        request = self.context.get("request")
+        user = request.user if request else None
+        if value.type != "channel" or (user and value.created_by_id != user.id):
+            raise serializers.ValidationError("You can only set a channel you own as your personal channel.")
+        return value
+
+    def get_personal_channel_info(self, obj):
+        channel = obj.personal_channel
+        if not channel:
+            return None
+        return {"id": channel.id, "name": channel.name, "avatar_url": None}
+
+    def to_representation(self, instance):
+        # `bio` stays a normal writable model field (needed by
+        # UpdateProfileView's own-account edits) — this only blanks it out
+        # in the OUTGOING representation when another viewer isn't allowed
+        # to see it, same rule as avatar_url/last_seen above.
+        data = super().to_representation(instance)
+
+        request = self.context.get("request")
+        if request and request.user.is_authenticated and request.user.id != instance.id \
+           and instance.bio_visibility == User.VISIBILITY_NOBODY:
+            data["bio"] = ""
+
+        if request and request.user.is_authenticated and request.user.id != instance.id \
+           and instance.phone_visibility == User.VISIBILITY_NOBODY:
+            data["phone_number"] = ""
+
+        if request and request.user.is_authenticated and request.user.id != instance.id \
+           and instance.birthday_visibility == User.VISIBILITY_NOBODY:
+            data["birthday"] = None
+
+        return data
 
     def get_is_blocked_by_me(self, obj):
         request = self.context.get("request")

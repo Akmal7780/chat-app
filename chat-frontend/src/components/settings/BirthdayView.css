@@ -1,0 +1,23 @@
+.birthday-wheels {
+  display: flex;
+  gap: 10px;
+  padding: 24px 16px;
+}
+
+.birthday-wheels select {
+  flex: 1;
+  padding: 10px;
+  background-color: var(--bg-obsidian-surface);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-md);
+  color: var(--on-surface);
+  font-size: 14px;
+  outline: none;
+}
+
+.birthday-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 16px;
+}

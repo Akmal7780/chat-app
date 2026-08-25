@@ -231,7 +231,7 @@ export function CallProvider({ children, currentUser, sendCallSignal, subscribeC
         return
       }
       pendingOfferRef.current = data
-      setRemoteUser({ id: data.from_user_id, username: data.from_username })
+      setRemoteUser({ id: data.from_user_id, username: data.from_display_name })
       setCallType(data.call_type || "audio")
       setCallState("ringing")
       return
@@ -261,6 +261,13 @@ export function CallProvider({ children, currentUser, sendCallSignal, subscribeC
       } else {
         pendingCandidatesRef.current.push(data.candidate)
       }
+      return
+    }
+
+    if (data.type === "call_unavailable") {
+      toast("This user doesn't accept calls", { icon: "📵" })
+      logCallOutcome("missed_or_canceled")
+      cleanup()
       return
     }
 

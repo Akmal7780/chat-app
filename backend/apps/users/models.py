@@ -35,6 +35,18 @@ class User(AbstractUser):
 
     bio = models.TextField(blank=True)
 
+    full_name = models.CharField(max_length=150, blank=True)
+    phone_number = models.CharField(max_length=32, blank=True)
+    birthday = models.DateField(null=True, blank=True)
+    name_color = models.CharField(max_length=20, blank=True)
+    personal_channel = models.ForeignKey(
+        "conversations.Conversation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
     google_id = models.CharField(max_length=255, blank=True, null=True)
 
     auth_provider = models.CharField(
@@ -63,6 +75,14 @@ class User(AbstractUser):
     )
     last_seen_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
     avatar_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    bio_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    messages_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    calls_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    voice_messages_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    invites_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    forwarded_messages_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    phone_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    birthday_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -11,9 +11,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,16 +113,21 @@
   margin-bottom: 24px;
 }
 
-.avatar-preview-container {
+.avatar-preview-wrapper {
   position: relative;
   width: 96px;
   height: 96px;
+  flex-shrink: 0;
+}
+
+.avatar-preview-container {
+  width: 100%;
+  height: 100%;
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-md);
   border: 2.5px solid var(--border-obsidian);
   overflow: hidden;
   transition: var(--transition);
-  flex-shrink: 0;
 }
 
 .avatar-preview-container:hover {
@@ -224,6 +229,77 @@
   font-size: 11px;
   color: var(--on-surface-variant);
   opacity: 0.7;
+}
+
+.avatar-camera-btn {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 30px;
+  height: 30px;
+  background: var(--indigo-accent);
+  border: 2.5px solid var(--bg-obsidian-card);
+  border-radius: var(--radius-full);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  padding: 0;
+  line-height: 1;
+}
+
+.avatar-camera-btn:hover:not(:disabled) {
+  background: #4f46e5;
+  transform: scale(1.08);
+}
+
+.avatar-camera-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.profile-own-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.profile-status-line {
+  font-size: 12px;
+  color: var(--indigo-accent);
+}
+
+.profile-coming-soon-list {
+  margin: 4px 0 20px;
+}
+
+.profile-hint-text {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  opacity: 0.75;
+  padding: 6px 12px 18px;
+  line-height: 1.4;
+}
+
+.profile-badge-new {
+  background: var(--indigo-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+
+.profile-edit-modal-flush {
+  padding: 0 !important;
+}
+
+.profile-edit-modal-flush .modal-loading-overlay {
+  border-radius: 0;
 }
 
 /* ==========================================================================

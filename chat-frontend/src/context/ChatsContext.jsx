@@ -12,6 +12,7 @@ const CALL_SIGNAL_TYPES = new Set([
   "call_answered",
   "call_ice_candidate",
   "call_ended",
+  "call_unavailable",
 ])
 
 export const ChatsProvider = ({ children, currentUser, onNotificationClick }) => {
@@ -130,17 +131,33 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
     }
   }, [currentUser, refreshConversations, refreshFolders])
 
-  // 🔔 Single persistent notification socket for the whole /chat session
+  // 🔔 Single persistent notification socket for the whole /chat session —
+  // reconnects with a short fixed delay if the connection drops (backend
+  // restart, network blip, laptop sleep/wake), since without this a dead
+  // socket silently stops all real-time toasts/badge updates until the
+  // user manually refreshes the page.
   useEffect(() => {
     const token = localStorage.getItem("token")
     if (!token || !currentUser) return
 
-    const ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/notifications/?token=${token}`)
-    notificationSocketRef.current = ws
+    let active = true
+    let reconnectTimeout = null
 
-    ws.onopen = () => console.log("🔔 Notification connected")
+    const connect = () => {
+      if (!active) return
 
-    ws.onmessage = (event) => {
+      const ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/ws/notifications/?token=${token}`)
+      notificationSocketRef.current = ws
+
+      ws.onopen = () => console.log("🔔 Notification connected")
+      ws.onmessage = handleMessage
+      ws.onclose = () => {
+        console.log("🔌 Notification closed")
+        if (active) reconnectTimeout = setTimeout(connect, 3000)
+      }
+    }
+
+    const handleMessage = (event) => {
       const data = JSON.parse(event.data)
 
       if (CALL_SIGNAL_TYPES.has(data.type)) {
@@ -189,9 +206,10 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
                 unread_count: (c.unread_count || 0) + 1,
                 last_message: {
                   id: data.message_id,
-                  content: data.text,
+                  content: data.content,
                   sender_id: data.sender_id,
                   sender_username: data.sender,
+                  sender_display_name: data.sender,
                   created_at: new Date().toISOString(),
                   message_type: data.message_type || data.notification_type,
                   is_deleted: false,
@@ -210,7 +228,7 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
           return {
             conversationId: conv.id,
             type: conv.type,
-            displayName: isGroup ? conv.name : conv.other_participant?.username,
+            displayName: isGroup ? conv.name : (conv.other_participant?.full_name || "Unknown"),
             avatarUrl: isGroup ? null : conv.other_participant?.avatar_url,
             otherUserId: conv.other_participant?.id ?? null,
             membersCount: conv.members_count,
@@ -281,9 +299,13 @@ export const ChatsProvider = ({ children, currentUser, onNotificationClick }) =>
       )
     }
 
-    ws.onclose = () => console.log("🔌 Notification closed")
+    connect()
 
-    return () => ws.close()
+    return () => {
+      active = false
+      clearTimeout(reconnectTimeout)
+      notificationSocketRef.current?.close()
+    }
   }, [currentUser, refreshConversations, onNotificationClick])
 
   return (

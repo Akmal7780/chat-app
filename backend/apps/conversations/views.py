@@ -77,6 +77,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 serializer = self.get_serializer(existing)
                 return Response(serializer.data)
 
+            # Only gates brand-new conversations — an existing chat (handled
+            # above) keeps working even if this was turned on afterward.
+            if participant.messages_visibility == User.VISIBILITY_NOBODY:
+                return Response(
+                    {"error": "This user doesn't accept messages from everyone"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -134,6 +142,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": "User already in group"},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if user.invites_visibility == User.VISIBILITY_NOBODY:
+            return Response(
+                {"error": f"{user.username} doesn't allow being added to groups"},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         ConversationParticipant.objects.create(

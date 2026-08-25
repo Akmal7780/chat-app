@@ -1,22 +1,22 @@
 import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import toast from "react-hot-toast"
-import ChatsList from "../components/ChatsList"
-import SidebarHeader, { useFolderTab } from "../components/SidebarHeader"
-import FolderRail from "../components/FolderRail"
+import ChatsList from "../components/chat/ChatsList"
+import SidebarHeader, { useFolderTab } from "../components/chat/SidebarHeader"
+import FolderRail from "../components/chat/FolderRail"
 import { ChatsProvider } from "../context/ChatsContext"
 import { ConnectedCallProvider } from "../context/CallContext"
-import CallModal from "../components/CallModal"
-import ChatContainer from "../components/ChatContainer"
+import CallModal from "../components/modals/CallModal"
+import ChatContainer from "../components/chat/ChatContainer"
 import api from "../api/axios";
-import ProfileEdit from "../components/ProfileEdit"
-import SettingsModal from "../components/SettingsModal"
-import CreateGroupModal from "../components/CreateGroupModal";
-import CreateChannelModal from "../components/CreateChannelModal"
-import ContactsModal from "../components/ContactsModal"
-import PublicChannelsModal from "../components/PublicChannelsModal"
-import CallsListModal from "../components/CallsListModal"
-import ModerationPanel from "../components/ModerationPanel"
+import ProfileEdit from "../components/settings/ProfileEdit"
+import SettingsModal from "../components/settings/SettingsModal"
+import CreateGroupModal from "../components/modals/CreateGroupModal";
+import CreateChannelModal from "../components/modals/CreateChannelModal"
+import ContactsModal from "../components/modals/ContactsModal"
+import PublicChannelsModal from "../components/modals/PublicChannelsModal"
+import CallsListModal from "../components/modals/CallsListModal"
+import ModerationPanel from "../components/moderation/ModerationPanel"
 import { getTheme, applyTheme, isDarkFamily } from "../utils/theme"
 import { useLanguage } from "../utils/i18n"
 import "../styles/chat.css"
@@ -187,7 +187,7 @@ function Chat() {
     setSelectedUser({
       conversationId: null,
       type: "private",
-      displayName: user.username,
+      displayName: user.full_name || "Unknown",
       avatarUrl: user.avatar_url || user.avatar || null,
       otherUserId: user.id,
       membersCount: null,
@@ -206,7 +206,7 @@ function Chat() {
         <p>Loading chat application...</p>
         {currentUser && (
           <div className="welcome-message">
-            Welcome back, {currentUser.username}!
+            Welcome back, {currentUser.full_name || "Unknown"}!
           </div>
         )}
       </div>
@@ -261,13 +261,13 @@ function Chat() {
     <img src={currentUser.avatar_url} alt="avatar" />
   ) : (
     <span>
-      {currentUser?.username?.[0]?.toUpperCase() || "U"}
+      {(currentUser?.full_name || "Unknown")[0].toUpperCase()}
     </span>
   )}
 </div>
 
             <div className="user-details">
-              <h3>{currentUser?.username}</h3>
+              <h3>{currentUser?.full_name || "Unknown"}</h3>
               <small>{currentUser?.email}</small>
             </div>
           </div>
@@ -289,11 +289,11 @@ function Chat() {
                 {hasAvatar ? (
                   <img src={currentUser.avatar_url} alt="avatar" />
                 ) : (
-                  <span>{currentUser?.username?.[0]?.toUpperCase() || "U"}</span>
+                  <span>{(currentUser?.full_name || "Unknown")[0].toUpperCase()}</span>
                 )}
               </div>
               <div className="settings-menu-profile-info">
-                <h4>{currentUser?.username}</h4>
+                <h4>{currentUser?.full_name || "Unknown"}</h4>
                 <span>{currentUser?.email}</span>
               </div>
             </div>

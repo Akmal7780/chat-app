@@ -1,0 +1,86 @@
+.edit-field-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+}
+
+.edit-field-dialog {
+  width: 100%;
+  max-width: 340px;
+  background: var(--bg-obsidian-card);
+  border: 1px solid var(--border-obsidian);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+}
+
+.edit-field-dialog h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.edit-field-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edit-field-dialog-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--indigo-accent);
+}
+
+.edit-field-dialog-field input {
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border-obsidian);
+  color: var(--on-surface);
+  font-size: 15px;
+  padding: 4px 0 8px;
+  outline: none;
+}
+
+.edit-field-dialog-field input:focus {
+  border-bottom-color: var(--indigo-accent);
+}
+
+.edit-field-dialog-hint {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  background: var(--bg-obsidian-surface);
+  border-radius: var(--radius-md);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.edit-field-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.edit-field-dialog-actions button {
+  background: none;
+  border: none;
+  color: var(--indigo-accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.edit-field-dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

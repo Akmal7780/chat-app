@@ -140,6 +140,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             # basic
             "notification_type": event.get("notification_type", "message"),
             "text": event.get("text"),
+            "content": event.get("content"),
 
             # message info
             "message_id": event.get("message_id"),
@@ -205,10 +206,18 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         target_group = f"notifications_{target_user_id}"
 
         if action == "call_offer":
+            if not await self.calls_allowed(target_user_id):
+                await self.send(text_data=json.dumps({
+                    "type": "call_unavailable",
+                    "target_user_id": target_user_id,
+                }))
+                return
+
             await self.channel_layer.group_send(target_group, {
                 "type": "incoming_call",
                 "from_user_id": self.user.id,
                 "from_username": self.user.username,
+                "from_display_name": self.user.full_name or "Unknown",
                 "conversation_id": data.get("conversation_id"),
                 "call_type": data.get("call_type", "audio"),
                 "sdp": data.get("sdp"),
@@ -237,6 +246,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "type": "incoming_call",
             "from_user_id": event["from_user_id"],
             "from_username": event["from_username"],
+            "from_display_name": event.get("from_display_name") or "Unknown",
             "conversation_id": event.get("conversation_id"),
             "call_type": event.get("call_type", "audio"),
             "sdp": event["sdp"],
@@ -268,6 +278,12 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         from django.contrib.auth import get_user_model
         User = get_user_model()
         return User.objects.filter(id=user_id).exists()
+
+    @database_sync_to_async
+    def calls_allowed(self, user_id):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        return User.objects.filter(id=user_id).exclude(calls_visibility=User.VISIBILITY_NOBODY).exists()
 
     # ========================
     # 🔽 DATABASE FUNCTIONS

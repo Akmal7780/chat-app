@@ -15,7 +15,8 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 ## 🚀 Features
 
 ### 💬 Messaging
-* Real-time messaging over WebSocket (Django Channels)
+* Real-time messaging over WebSocket (Django Channels), with the notification socket auto-reconnecting (3s backoff) if the connection ever drops — a backend restart, laptop sleep, or network blip no longer silently kills live delivery until a manual page refresh
+* Background/off-screen notifications are correctly scoped per conversation — leaving a chat (or closing the tab) clears the server-side "currently viewing" flag for it, so you keep getting real-time alerts for that chat instead of it going silent forever after the first visit
 * Message status: sent / delivered / read
 * Reply system, edit & delete messages, emoji reactions, pin/unpin
 * File, image, and voice message sharing with chunked/multipart upload for large files
@@ -37,7 +38,7 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * **Stickers & GIF** — a quick-send sticker panel plus live GIF search (Giphy), sent instantly with no bubble around the sticker
 
 ### 👥 Groups & Channels
-* Group creation with a real member-management panel (mute, add members, manage, leave — admin-gated)
+* Group creation as a two-step Telegram-style flow (name/photo, then a searchable member picker) with a real member-management panel afterward (mute, add members, manage, leave — admin-gated)
 * Channel creation, editing (name/avatar/description/public-private/invite link) restricted to admins/owner
 * Public channel discovery — search and join open channels
 * Custom folders — create, delete, and assign chats/channels to a folder
@@ -54,8 +55,11 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 ### 🔐 Security & Privacy
 * JWT authentication (SimpleJWT) + Google OAuth 2.0
 * **Two-Step Verification (2FA)** — password, hint, and recovery email, matching Telegram's exact flow
-* **Active Sessions** — real per-device session list with instant, server-side token revocation (REST *and* WebSocket)
+* **Active Sessions** — real per-device session list with instant, server-side token revocation (REST *and* WebSocket); re-logging in from the same device reuses its existing row instead of piling up duplicates
 * **Local Passcode** — client-side 4-digit PIN app lock (SHA-256, never leaves the device)
+* **Privacy controls** — Everybody/Nobody visibility for last seen, profile photo, bio, phone number, and birthday, plus real enforcement (not just display) on who can message you, call you, send you voice messages, add you to groups, or see their name attached to messages you forward
+* **Profile: separate display name** — a dedicated "Name" field independent of the `@username` handle, shown everywhere a person's identity is displayed app-wide (message bubbles, chat list, group/channel member lists, calls, search); falls back to the username when unset, and never affects @mentions or search-by-handle
+* **My Account** — Telegram-style Info screen: avatar with inline camera picker, auto-saving Bio (70-char limit), Name/Phone number/Username as tap-to-edit popup fields, a real Personal Channel picker (choose from channels you own), a per-user Name Color (persisted, shown as an accent pill), a Birthday picker, and a Chat Automation settings screen (bot handle + chat-access rules, saved locally — no bot platform integration yet)
 * Real user blocking, enforced server-side on both conversation creation and message send
 * Antivirus scanning via **ClamAV** for images and other unknown/small files (fails closed if the scanner is unreachable); videos and `.zip` archives skip the scan by design, and dangerous executable extensions (`.exe`, `.bat`, `.sh`, ...) are rejected outright before any bytes are uploaded
 * Rate limiting (DRF throttling) on login, 2FA verification, messaging, and uploads

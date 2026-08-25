@@ -14,9 +14,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -41,7 +41,7 @@
    ========================================================================== */
 .create-group-modal {
   width: 100%;
-  max-width: 540px;
+  max-width: 420px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(32px) saturate(1.8);
   -webkit-backdrop-filter: blur(32px) saturate(1.8);
@@ -56,6 +56,67 @@
   max-height: 90vh;
   display: flex;
   flex-direction: column;
+}
+
+.create-group-modal.step-info {
+  max-width: 340px;
+}
+
+.group-info-step-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 24px 8px;
+}
+
+.group-info-step-field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-info-step-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--indigo-accent, #6366f1);
+}
+
+.group-info-step-field input {
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.12);
+  color: var(--text-primary, #1e293b);
+  font-size: 15px;
+  padding: 4px 0 8px;
+  outline: none;
+}
+
+.group-info-step-field input:focus {
+  border-bottom-color: var(--indigo-accent, #6366f1);
+}
+
+.group-info-step-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+
+.group-info-step-actions button {
+  background: none;
+  border: none;
+  color: var(--indigo-accent, #6366f1);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.group-info-step-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 @keyframes modalSlideUp {
@@ -796,9 +857,15 @@
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: linear-gradient(135deg, #8b7cf7, #7c6df0);
   opacity: 0;
   transition: opacity 0.3s ease;
+}
+
+.create-group-modal .create-btn > * {
+  position: relative;
+  z-index: 1;
 }
 
 .create-group-modal .create-btn:hover:not(:disabled) {
@@ -978,19 +1045,26 @@
    any width, so this docks near the top of the sidebar instead. */
 .settings-menu {
   position: absolute;
-  top: 8px;
-  right: 12px;
+  top: 0;
+  left: 0;
+  bottom: 0;
   background: var(--bg-obsidian-card);
-  border-radius: 10px;
+  border-radius: 0 12px 12px 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  width: 240px;
+  width: 280px;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--border-obsidian);
-  animation: fadeIn 0.15s ease;
+  border-left: none;
+  animation: slideInLeft 0.15s ease;
   z-index: 50;
-  overflow: hidden;
+  overflow-y: auto;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .settings-menu-profile {

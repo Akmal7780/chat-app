@@ -1,0 +1,42 @@
+.automation-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 28px 20px;
+}
+
+.automation-icon {
+  font-size: 40px;
+}
+
+.automation-intro p {
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  margin: 0;
+}
+
+.automation-bot-input {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: var(--on-surface);
+  font-size: 14px;
+  outline: none;
+}
+
+.automation-exclude-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--indigo-accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}

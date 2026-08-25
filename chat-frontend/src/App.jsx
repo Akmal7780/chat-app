@@ -4,7 +4,7 @@ import { Toaster } from "react-hot-toast"
 import Login from "./pages/Login"
 import Register from "./pages/Register"
 import Chat from "./pages/Chat"
-import LockScreenOverlay from "./components/LockScreenOverlay"
+import LockScreenOverlay from "./components/chat/LockScreenOverlay"
 import { isLocked, onLockRequested } from "./utils/localPasscode"
 import { LanguageProvider } from "./utils/i18n"
 

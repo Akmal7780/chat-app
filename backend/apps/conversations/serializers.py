@@ -182,6 +182,7 @@ class ConversationSerializer(serializers.ModelSerializer):
             "content": message.content,
             "sender_id": message.sender_id,
             "sender_username": message.sender.username,
+            "sender_display_name": message.sender.full_name or "Unknown",
             "created_at": message.created_at,
             "message_type": message.message_type,
             "is_deleted": message.is_deleted,
@@ -255,6 +256,7 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 class ConversationParticipantSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
+    full_name = serializers.CharField(source="user.full_name", read_only=True)
 
     class Meta:
         model = ConversationParticipant
@@ -263,6 +265,7 @@ class ConversationParticipantSerializer(serializers.ModelSerializer):
             "conversation",
             "user",
             "username",
+            "full_name",
             "role",
             "joined_at",
             "left_at",

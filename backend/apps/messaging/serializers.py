@@ -44,6 +44,10 @@ class MessageSerializer(serializers.ModelSerializer):
         source="sender.username",
         read_only=True
     )
+    sender_display_name = serializers.SerializerMethodField()
+
+    def get_sender_display_name(self, obj):
+        return obj.sender.full_name or "Unknown"
 
     attachments = serializers.SerializerMethodField()
 
@@ -68,6 +72,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "conversation",
             "sender",
             "sender_username",
+            "sender_display_name",
             "message_type",
             "content",
             "attachments",
@@ -93,6 +98,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "id",
             "sender",
             "sender_username",
+            "sender_display_name",
             "is_edited",
             "is_deleted",
             "scheduled_at",
@@ -108,9 +114,13 @@ class MessageSerializer(serializers.ModelSerializer):
     # =========================
     def get_forwarded_from(self, obj):
         if obj.forwarded_from:
+            original_sender = obj.forwarded_from.sender
+            if original_sender.forwarded_messages_visibility == original_sender.VISIBILITY_NOBODY:
+                return None
             return {
                 "id": obj.forwarded_from.id,
-                "sender_username": obj.forwarded_from.sender.username,
+                "sender_username": original_sender.username,
+                "sender_display_name": original_sender.full_name or "Unknown",
             }
         return None
 
@@ -122,6 +132,7 @@ class MessageSerializer(serializers.ModelSerializer):
             return {
                 "id": obj.reply_to.id,
                 "sender": obj.reply_to.sender.username,
+                "sender_display_name": obj.reply_to.sender.full_name or "Unknown",
                 "sender_id": obj.reply_to.sender.id,
                 "content": obj.reply_to.content,
                 "is_deleted": obj.reply_to.is_deleted
@@ -137,7 +148,8 @@ class MessageSerializer(serializers.ModelSerializer):
                 "id": r.id,
                 "emoji": r.emoji,
                 "user_id": r.user.id,
-                "username": r.user.username
+                "username": r.user.username,
+                "display_name": r.user.full_name or "Unknown",
             }
             for r in obj.reactions.all()
         ]
@@ -158,7 +170,7 @@ class MessageSerializer(serializers.ModelSerializer):
         my_voted_option_ids = set()
 
         for option in poll.options.all():
-            voters = list(option.votes.values("user_id", "user__username"))
+            voters = list(option.votes.values("user_id", "user__username", "user__full_name"))
             all_voter_ids = [v["user_id"] for v in voters]
             total_votes += len(all_voter_ids)
             if requesting_user_id in all_voter_ids:
@@ -173,7 +185,14 @@ class MessageSerializer(serializers.ModelSerializer):
                 "text": option.text,
                 "vote_count": len(all_voter_ids),
                 "voter_ids": [v["user_id"] for v in visible_voters],
-                "voters": [{"id": v["user_id"], "username": v["user__username"]} for v in visible_voters],
+                "voters": [
+                    {
+                        "id": v["user_id"],
+                        "username": v["user__username"],
+                        "display_name": v["user__full_name"] or "Unknown",
+                    }
+                    for v in visible_voters
+                ],
                 "added_by": option.added_by_id,
             })
 
@@ -231,8 +250,12 @@ class MessageSerializer(serializers.ModelSerializer):
 class ReactionSerializer(serializers.ModelSerializer):
 
     username = serializers.CharField(source="user.username", read_only=True)
+    display_name = serializers.SerializerMethodField()
     user_id = serializers.IntegerField(source="user.id", read_only=True)
+
+    def get_display_name(self, obj):
+        return obj.user.full_name or "Unknown"
 
     class Meta:
         model = Reaction
-        fields = ["id", "emoji", "user_id", "username"]
+        fields = ["id", "emoji", "user_id", "username", "display_name"]

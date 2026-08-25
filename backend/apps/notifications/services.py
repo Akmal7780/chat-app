@@ -28,7 +28,7 @@ def _extract_mentioned_user_ids(content, participant_pairs):
 
 
 def build_notification_text(message):
-    sender = message.sender.username
+    sender = message.sender.full_name or "Unknown"
 
     if message.message_type == "image":
         return "image", f"{sender} sent a photo \U0001F4F7"
@@ -59,7 +59,7 @@ def notify_conversation_participants(message, *, skip_user_ids=()):
     """
     conversation = message.conversation
     notif_type, text = build_notification_text(message)
-    sender = message.sender.username
+    sender = message.sender.full_name or "Unknown"
 
     participants = list(
         ConversationParticipant.objects.filter(conversation=conversation)
@@ -96,6 +96,7 @@ def notify_conversation_participants(message, *, skip_user_ids=()):
                 "type": "send_notification",
                 "notification_type": user_notif_type,
                 "text": user_text,
+                "content": message.content,
                 "message_id": message.id,
                 "conversation_id": str(conversation.id),
                 "sender": sender,
