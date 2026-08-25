@@ -11,6 +11,8 @@ import { useChats } from "../context/ChatsContext"
 import { useCall } from "../context/CallContext"
 import ChannelInfoModal from "./ChannelInfoModal"
 import UserInfoModal from "./UserInfoModal"
+import WallpaperPicker from "./WallpaperPicker"
+import ConfirmModal from "./ConfirmModal"
 import GroupInfoModal from "./GroupInfoModal"
 import { formatLastSeen } from "../utils/formatTime"
 import { getAvatarColor } from "../utils/avatarColor"
@@ -56,6 +58,8 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
   }
   const [groupInfoInitialMode, setGroupInfoInitialMode] = useState("view")
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showWallpaperModal, setShowWallpaperModal] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState(null)
   const [exportIncludePhotos, setExportIncludePhotos] = useState(true)
   const [exportIncludeVideos, setExportIncludeVideos] = useState(true)
   const [exportIncludeVoice, setExportIncludeVoice] = useState(true)
@@ -199,29 +203,43 @@ function ChatContainer({ selectedUser, currentUser, onBack, onSelectUser, users 
     }
   }
 
-  const handleHeaderLeave = async () => {
+  const handleHeaderLeave = () => {
     setShowHeaderMenu(false)
-    if (!window.confirm(`Leave "${conversation.name}"?`)) return
-    try {
-      await api.post(`/conversations/${conversation.id}/leave/`)
-      onBack?.()
-    } catch (err) {
-      console.error("Leave group error:", err)
-      toast.error("Failed to leave group")
-    }
+    setConfirmDialog({
+      title: "Leave chat",
+      message: `Leave "${conversation.name}"?`,
+      confirmLabel: "Leave",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.post(`/conversations/${conversation.id}/leave/`)
+          onBack?.()
+        } catch (err) {
+          console.error("Leave group error:", err)
+          toast.error("Failed to leave group")
+        }
+      },
+    })
   }
 
-  const handleHeaderClearHistory = async () => {
+  const handleHeaderClearHistory = () => {
     setShowHeaderMenu(false)
-    if (!window.confirm("Clear chat history? This only removes it from your view — other participants keep their copy.")) return
-    try {
-      await api.post(`/conversations/${conversation.id}/clear-history/`)
-      setMessages([])
-      toast.success("Chat history cleared")
-    } catch (err) {
-      console.error("Clear history error:", err)
-      toast.error("Failed to clear history")
-    }
+    setConfirmDialog({
+      title: "Clear chat history",
+      message: "Clear chat history? This only removes it from your view — other participants keep their copy.",
+      confirmLabel: "Clear",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.post(`/conversations/${conversation.id}/clear-history/`)
+          setMessages([])
+          toast.success("Chat history cleared")
+        } catch (err) {
+          console.error("Clear history error:", err)
+          toast.error("Failed to clear history")
+        }
+      },
+    })
   }
 
   const openScheduledModal = () => {
@@ -677,6 +695,16 @@ const buildMemberChatTarget = (member) => {
           )
         }
 
+        // A view-once photo/video was opened — flip it to "Opened" live for
+        // everyone with the chat open (see services.open_view_once_media).
+        else if (data.type === "message_viewed") {
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === data.message_id ? { ...msg, viewed_at: data.viewed_at } : msg
+            )
+          )
+        }
+
         // Presence (online_users_list / user_online / user_offline) is no
         // longer sent over this per-conversation socket — it now arrives
         // exclusively over the always-on notifications socket, handled in
@@ -922,7 +950,7 @@ setLoading(true)
 }
 
 
-  const sendMessage = (messageText, attachments = [], reply) => {
+  const sendMessage = (messageText, attachments = [], reply, messageType = "text") => {
     if (!messageText?.trim() && attachments.length === 0) {
       alert("Message cannot be empty!")
       return
@@ -950,6 +978,7 @@ setLoading(true)
       sender_username: currentUser.username,
       content: messageText.trim(),
       attachments: attachments,
+      message_type: messageType,
       created_at: now,
       status: "sending",
       reply_to: reply
@@ -971,7 +1000,7 @@ setLoading(true)
           sender_id: currentUser.id,
           sender_username: currentUser.username,
           created_at: now,
-          message_type: attachments.length ? "file" : "text",
+          message_type: messageType !== "text" ? messageType : (attachments.length ? "file" : "text"),
           is_deleted: false,
         },
       })
@@ -982,7 +1011,8 @@ setLoading(true)
       message: messageText.trim(),
       attachments: attachments,
       reply_to: reply?.id || null,
-      temp_id: tempId   
+      temp_id: tempId,
+      message_type: messageType
     }))
     setReplyMessage(null)
 
@@ -1336,8 +1366,8 @@ setLoading(true)
     )}
   </div>
 
-  {/* Header kebab menu (group/channel only) */}
-  {selectedUser && (selectedUser.type === "group" || selectedUser.type === "channel") && (
+  {/* Header kebab menu — available for every conversation type, to every member */}
+  {selectedUser && !isSavedMessages && (
     <div className="chat-header-menu-wrapper">
       <button
         ref={headerMenuBtnRef}
@@ -1355,20 +1385,32 @@ setLoading(true)
               <span>{conversation?.is_muted ? "🔔" : "🔕"}</span>
               {conversation?.is_muted ? "Unmute notifications" : "Mute notifications"}
             </button>
-            <button
-              onClick={() => {
-                setShowHeaderMenu(false)
-                if (selectedUser.type === "group") openGroupInfo()
-                else setShowChannelInfo(true)
-              }}
-            >
-              <span>ℹ️</span> View {selectedUser.type === "group" ? "group" : "channel"} info
-            </button>
-            {selectedUser.type === "group" ? (
+            {selectedUser.type === "private" ? (
+              <button
+                onClick={() => {
+                  setShowHeaderMenu(false)
+                  setShowUserInfo(true)
+                }}
+              >
+                <span>👤</span> View profile
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setShowHeaderMenu(false)
+                  if (selectedUser.type === "group") openGroupInfo()
+                  else setShowChannelInfo(true)
+                }}
+              >
+                <span>ℹ️</span> View {selectedUser.type === "group" ? "group" : "channel"} info
+              </button>
+            )}
+            {selectedUser.type === "group" && (
               <button onClick={openManageGroup}>
                 <span>⚙️</span> Manage group
               </button>
-            ) : (
+            )}
+            {selectedUser.type === "channel" && (
               <button
                 onClick={() => {
                   setShowHeaderMenu(false)
@@ -1378,26 +1420,71 @@ setLoading(true)
                 <span>⚙️</span> Manage channel
               </button>
             )}
-            <button onClick={openPollModal}>
-              <span>📊</span> Create poll
+            <button
+              onClick={() => {
+                setShowHeaderMenu(false)
+                setShowWallpaperModal(true)
+              }}
+            >
+              <span>🖼️</span> Set Wallpaper
             </button>
+            {selectedUser.type !== "private" && (
+              <button onClick={openPollModal}>
+                <span>📊</span> Create poll
+              </button>
+            )}
             <button onClick={openExportModal}>
               <span>📤</span> Export chat history
             </button>
-            <button onClick={openReportModal}>
-              <span>⚠️</span> Report
-            </button>
+            {selectedUser.type !== "private" && (
+              <button onClick={openReportModal}>
+                <span>⚠️</span> Report
+              </button>
+            )}
             <button onClick={handleHeaderClearHistory}>
               <span>🧹</span> Clear history
             </button>
-            <button className="danger" onClick={handleHeaderLeave}>
-              <span>🚪</span> Leave {selectedUser.type === "group" ? "group" : "channel"}
-            </button>
+            {selectedUser.type !== "private" && (
+              <button className="danger" onClick={handleHeaderLeave}>
+                <span>🚪</span> Leave {selectedUser.type === "group" ? "group" : "channel"}
+              </button>
+            )}
           </div>
         </>,
         document.body
       )}
     </div>
+  )}
+
+  {showWallpaperModal && conversation && createPortal(
+    <div className="poll-modal-overlay" onClick={() => setShowWallpaperModal(false)}>
+      <div className="poll-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="poll-modal-header">
+          <h3>🖼️ Set Wallpaper</h3>
+          <button onClick={() => setShowWallpaperModal(false)}>×</button>
+        </div>
+        <div className="poll-modal-body">
+          <WallpaperPicker
+            conversationId={conversation.id}
+            currentType={conversation.wallpaper_type}
+            currentValue={conversation.wallpaper_value}
+            onUpdated={(updated) => {
+              setConversation((prev) => ({ ...prev, ...updated }))
+              updateConversation(conversation.id, updated)
+            }}
+          />
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {confirmDialog && (
+    <ConfirmModal
+      {...confirmDialog}
+      onCancel={() => setConfirmDialog(null)}
+      onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null) }}
+    />
   )}
 
   {showChannelInfo && selectedUser?.type === "channel" && conversation && (
@@ -1501,6 +1588,9 @@ setLoading(true)
       socket={socketRef}
       onReply={setReplyMessage}
       onForwardRequest={setForwardingMessage}
+      wallpaperType={conversation?.wallpaper_type}
+      wallpaperValue={conversation?.wallpaper_value}
+      wallpaperUrl={conversation?.wallpaper_url}
     />
   ) : (
     <div className="loading-user">Loading user data...</div>

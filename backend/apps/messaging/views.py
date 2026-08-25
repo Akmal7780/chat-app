@@ -4,6 +4,7 @@ import logging
 import zipfile
 
 from rest_framework import viewsets, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -17,6 +18,7 @@ from django.utils import timezone
 from django.utils.html import escape
 from django.utils.dateparse import parse_date, parse_datetime
 from utils.link_preview import fetch_link_preview, LinkPreviewError
+from utils.giphy import search_gifs, GiphyError
 from utils.minio import get_s3
 from apps.conversations.models import Conversation, ConversationParticipant
 from .models import Message, Attachment
@@ -99,6 +101,7 @@ class CompleteUpload(APIView):
             parts=request.data["parts"],
             size=request.data["size"],
             message_type=request.data.get("message_type"),
+            view_once=request.data.get("view_once", False),
         )
 
         return Response({"status": "uploaded"})
@@ -188,6 +191,23 @@ class MessageViewSet(viewsets.ModelViewSet):
             return Response({"error": "Reaction not found"}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({"deleted": True})
+
+    # =========================
+    # VIEW-ONCE MEDIA — one-shot read; deletes the MinIO object right after
+    # serving it, so the bytes can never be fetched a second time even via
+    # a leaked/cached URL (see services.open_view_once_media).
+    # =========================
+    @action(detail=True, methods=["post"], url_path="view-once/open")
+    def open_view_once(self, request, pk=None):
+        message = self.get_object()
+        try:
+            result = services.open_view_once_media(request.user, message)
+        except PermissionDenied as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return HttpResponse(result["content"], content_type=result["content_type"])
 
     # =========================
     # SCHEDULED MESSAGES ("send later")
@@ -638,3 +658,26 @@ class LinkPreviewAPIView(APIView):
             return Response({"error": str(e)}, status=422)
 
         return Response(preview)
+
+
+class GifSearchAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.GET.get("q")
+
+        if not query:
+            return Response({"error": "q is required"}, status=400)
+
+        try:
+            offset = int(request.GET.get("offset", 0))
+        except ValueError:
+            offset = 0
+
+        try:
+            results = search_gifs(query, offset=offset)
+        except GiphyError as e:
+            return Response({"error": str(e)}, status=422)
+
+        return Response(results)

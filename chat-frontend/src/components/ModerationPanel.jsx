@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import toast from "react-hot-toast"
 import api from "../api/axios"
+import ConfirmModal from "./ConfirmModal"
 import "./ModerationPanel.css"
 
 function ModerationPanel({ onClose }) {
@@ -11,6 +12,7 @@ function ModerationPanel({ onClose }) {
   const [words, setWords] = useState([])
   const [newWord, setNewWord] = useState("")
   const [loading, setLoading] = useState(true)
+  const [confirmDialog, setConfirmDialog] = useState(null)
 
   const loadReports = () => {
     setLoading(true)
@@ -48,16 +50,23 @@ function ModerationPanel({ onClose }) {
     }
   }
 
-  const deleteReportedMessage = async (report) => {
-    if (!window.confirm("Delete this message? This can't be undone.")) return
-    try {
-      await api.post(`/moderation/reports/message/${report.id}/delete-message/`)
-      setReports((prev) => prev.filter((r) => !(r.kind === "message" && r.id === report.id)))
-      toast.success("Message deleted")
-    } catch (err) {
-      console.error("Delete message error:", err)
-      toast.error("Failed to delete message")
-    }
+  const deleteReportedMessage = (report) => {
+    setConfirmDialog({
+      title: "Delete message",
+      message: "Delete this message? This can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.post(`/moderation/reports/message/${report.id}/delete-message/`)
+          setReports((prev) => prev.filter((r) => !(r.kind === "message" && r.id === report.id)))
+          toast.success("Message deleted")
+        } catch (err) {
+          console.error("Delete message error:", err)
+          toast.error("Failed to delete message")
+        }
+      },
+    })
   }
 
   const addWord = async () => {
@@ -83,7 +92,8 @@ function ModerationPanel({ onClose }) {
     }
   }
 
-  return createPortal(
+  return <>
+    {createPortal(
     <div className="poll-modal-overlay" onClick={onClose}>
       <div className="poll-modal moderation-panel" onClick={(e) => e.stopPropagation()}>
         <div className="poll-modal-header">
@@ -187,7 +197,15 @@ function ModerationPanel({ onClose }) {
       </div>
     </div>,
     document.body
-  )
+    )}
+    {confirmDialog && (
+      <ConfirmModal
+        {...confirmDialog}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null) }}
+      />
+    )}
+  </>
 }
 
 export default ModerationPanel

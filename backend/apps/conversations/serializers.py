@@ -20,6 +20,9 @@ class ConversationSerializer(serializers.ModelSerializer):
     unread_count = serializers.SerializerMethodField()
     is_muted = serializers.SerializerMethodField()
     is_pinned = serializers.SerializerMethodField()
+    wallpaper_type = serializers.SerializerMethodField()
+    wallpaper_value = serializers.SerializerMethodField()
+    wallpaper_url = serializers.SerializerMethodField()
 
     avatar_url = serializers.SerializerMethodField()
 
@@ -43,6 +46,9 @@ class ConversationSerializer(serializers.ModelSerializer):
             "unread_count",
             "is_muted",
             "is_pinned",
+            "wallpaper_type",
+            "wallpaper_value",
+            "wallpaper_url",
             "created_by",
             "created_at",
             "updated_at",
@@ -63,6 +69,9 @@ class ConversationSerializer(serializers.ModelSerializer):
             "unread_count",
             "is_muted",
             "is_pinned",
+            "wallpaper_type",
+            "wallpaper_value",
+            "wallpaper_url",
         ]
 
     def get_avatar_url(self, obj):
@@ -115,6 +124,36 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_is_pinned(self, obj):
         participant = self._current_participant(obj)
         return bool(participant and participant.is_pinned)
+
+    def get_wallpaper_type(self, obj):
+        participant = self._current_participant(obj)
+        return participant.wallpaper_type if participant else "default"
+
+    def get_wallpaper_value(self, obj):
+        participant = self._current_participant(obj)
+        return participant.wallpaper_value if participant else ""
+
+    def get_wallpaper_url(self, obj):
+        participant = self._current_participant(obj)
+        if not participant or not participant.wallpaper_image:
+            return None
+
+        from django.conf import settings
+        from utils.minio import get_s3
+
+        s3 = get_s3()
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                "Key": participant.wallpaper_image.name,
+            },
+            ExpiresIn=3600,
+        )
+        return url.replace(
+            settings.AWS_S3_ENDPOINT_URL,
+            getattr(settings, "PUBLIC_MINIO_URL", "http://localhost:9000")
+        )
 
     def get_other_participant(self, obj):
         if obj.type != Conversation.PRIVATE:

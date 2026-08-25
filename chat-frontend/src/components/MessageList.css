@@ -145,6 +145,26 @@ background-color: transparent;
   transition: var(--transition);
 }
 
+.message-list-bubble.bubble-transparent {
+  background: transparent !important;
+  box-shadow: none;
+  padding: 0;
+}
+
+.message-list-sticker {
+  display: inline-block;
+  font-size: 72px;
+  line-height: 1;
+}
+
+.message-list-gif {
+  display: block;
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: var(--radius-md, 10px);
+  object-fit: cover;
+}
+
 /* Received messages styling */
 .message-list-bubble.other-message {
   background-color: var(--bubble-received-bg);
@@ -370,8 +390,6 @@ background-color: transparent;
   justify-content: center;
   color: var(--text-muted);
   text-align: center;
-  background-color: var(--bg-obsidian);
-  background-image: radial-gradient(circle, rgba(99, 102, 241, 0.02) 0%, transparent 60%);
   padding: 20px;
 }
 

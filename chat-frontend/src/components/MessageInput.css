@@ -705,6 +705,32 @@
   stroke: currentColor;
 }
 
+.file-preview-view-once {
+  background: transparent;
+  border: 1.5px solid var(--border-obsidian, #2a2a3a);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.file-preview-view-once:hover {
+  opacity: 0.8;
+}
+
+.file-preview-view-once.active {
+  opacity: 1;
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
 /* ==========================================================================
    11. Emoji Picker - Modern Dropup
    ========================================================================== */

@@ -3,10 +3,9 @@ import { createPortal } from "react-dom"
 import toast from "react-hot-toast"
 import api from "../api/axios"
 import "./MessageInput.css"
-import { lazy, Suspense } from "react"
 import { getDraft, setDraft, clearDraft } from "../utils/drafts"
+import StickerGifPicker from "./StickerGifPicker"
 
-const EmojiPicker = lazy(() => import("emoji-picker-react"))
 function MessageInput({
   onSendMessage,
   isConnected,
@@ -26,6 +25,7 @@ function MessageInput({
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [selectedFile, setSelectedFile] = useState(null)
+  const [viewOnce, setViewOnce] = useState(false)
   const mediaRecorderRef = useRef(null)
   const recordedChunksRef = useRef([])
   const recordingTimerRef = useRef(null)
@@ -244,7 +244,8 @@ const getSuggestions = async () => {
 
     if (selectedFile) {
       // If a file is selected, first send the file
-      handleFileUpload(selectedFile)
+      handleFileUpload(selectedFile, { viewOnce })
+      setViewOnce(false)
     } else {
       onSendMessage(message,[], replyMessage)
       clearDraft(conversation?.id)
@@ -328,7 +329,7 @@ setFilePreview(URL.createObjectURL(file))
 
   const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB
 
-const handleFileUpload = async (file, { messageType } = {}) => {
+const handleFileUpload = async (file, { messageType, viewOnce: fileViewOnce } = {}) => {
   const preview = URL.createObjectURL(file)
   const tempId = "temp_" + Date.now() + "_" + Math.random()
   const isImage = file.type.startsWith("image")
@@ -438,7 +439,8 @@ const handleFileUpload = async (file, { messageType } = {}) => {
       conversation_id: conversation.id,
       file_name: file.name,
       size: file.size,
-      ...(messageType ? { message_type: messageType } : {})
+      ...(messageType ? { message_type: messageType } : {}),
+      ...(fileViewOnce ? { view_once: true } : {})
     })
 
     // 🔥 TEMP REMOVE
@@ -484,6 +486,7 @@ const handleFileUpload = async (file, { messageType } = {}) => {
 
   setSelectedFile(null)
   setFilePreview(null)
+  setViewOnce(false)
 
   if (fileInputRef.current) fileInputRef.current.value = ""
 }
@@ -588,13 +591,6 @@ const handleFileUpload = async (file, { messageType } = {}) => {
     return `${m}:${s.toString().padStart(2, "0")}`
   }
 
-  // Emoji picker 
-  const handleEmojiClick = (emojiData) => {
-  setMessage(prev => prev + emojiData.emoji)
-  textareaRef.current?.focus()
-  setShowEmojiPicker(false)
-}
-
 const runAiAction = async (endpoint, payload, resultField, label) => {
   if (!message.trim()) return
 
@@ -695,6 +691,15 @@ const handleRewrite = (tone) =>
               {(selectedFile.size / 1024).toFixed(1)} KB
             </span>
           </div>
+          {(selectedFile.type.startsWith("image") || selectedFile.type.startsWith("video")) && (
+            <button
+              className={`file-preview-view-once ${viewOnce ? "active" : ""}`}
+              onClick={() => setViewOnce((v) => !v)}
+              title={viewOnce ? "View once — recipient can open it only once" : "Send as view once"}
+            >
+              🔥
+            </button>
+          )}
           <button className="file-preview-cancel" onClick={cancelFile}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -944,16 +949,22 @@ const handleRewrite = (tone) =>
      
 
     {showEmojiPicker && (
-  <div className="emoji-picker" ref={emojiPickerRef}>
-    <Suspense fallback={<div>Loading...</div>}>
-      <EmojiPicker
-        onEmojiClick={handleEmojiClick}
-        width={300}
-        height={350}
-      />
-    </Suspense>
-  </div>
-)}
+      <div className="emoji-picker" ref={emojiPickerRef}>
+        <StickerGifPicker
+          onSelectEmoji={(emoji) => {
+            setMessage(prev => prev + emoji)
+            textareaRef.current?.focus()
+            setShowEmojiPicker(false)
+          }}
+          onSend={(content, messageType) => {
+            onSendMessage(content, [], replyMessage, messageType)
+            clearDraft(conversation?.id)
+            onCancelReply?.()
+            setShowEmojiPicker(false)
+          }}
+        />
+      </div>
+    )}
       {/* Connection status */}
       {/* {!isConnected && (
         <div className="connection-status">

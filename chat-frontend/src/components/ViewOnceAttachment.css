@@ -1,0 +1,67 @@
+.view-once-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-obsidian, #2a2a3a);
+  background: rgba(255, 107, 107, 0.1);
+  color: var(--on-surface);
+  padding: 8px 14px;
+  border-radius: var(--radius-full, 999px);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-once-badge:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.view-once-badge:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.view-once-badge.opened {
+  background: transparent;
+  opacity: 0.6;
+}
+
+.view-once-badge.mine {
+  background: transparent;
+}
+
+.view-once-badge-icon {
+  font-size: 14px;
+}
+
+.view-once-viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  cursor: pointer;
+}
+
+.view-once-viewer img,
+.view-once-viewer video {
+  max-width: 90%;
+  max-height: 90%;
+  cursor: default;
+}
+
+.view-once-viewer-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+}

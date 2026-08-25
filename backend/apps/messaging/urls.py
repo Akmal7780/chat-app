@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import MessageViewSet
-from .views import MessageViewSet, InitUpload, CompleteUpload,UploadPartDirect,DeleteAttachment, LinkPreviewAPIView, LogCallAPIView, CallLogListAPIView
+from .views import MessageViewSet, InitUpload, CompleteUpload,UploadPartDirect,DeleteAttachment, LinkPreviewAPIView, LogCallAPIView, CallLogListAPIView, GifSearchAPIView
 router = DefaultRouter()
 
 router.register("messages", MessageViewSet, basename="messages")
@@ -14,6 +14,7 @@ urlpatterns = [
     path("upload/part-direct/", UploadPartDirect.as_view()),
     path("attachments/<int:pk>/", DeleteAttachment.as_view()),
     path("link-preview/", LinkPreviewAPIView.as_view()),
+    path("gif-search/", GifSearchAPIView.as_view()),
     path("log-call/", LogCallAPIView.as_view()),
     path("calls/", CallLogListAPIView.as_view()),
 ]

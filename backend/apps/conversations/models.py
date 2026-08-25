@@ -1,5 +1,15 @@
 from django.db import models
 from django.conf import settings
+import uuid
+
+
+def participant_wallpaper_path(instance, filename):
+    ext = filename.split(".")[-1]
+
+    if instance.id:
+        return f"wallpapers/{instance.conversation_id}/{instance.user_id}/wallpaper.{ext}"
+
+    return f"wallpapers/temp/{uuid.uuid4()}.{ext}"
 
 
 class Conversation(models.Model):
@@ -116,6 +126,34 @@ class ConversationParticipant(models.Model):
         null=True,
         help_text="Messages created before this timestamp are hidden from this user's view (Telegram-style 'Clear history')."
     )
+
+    # =========================
+    # PER-USER CHAT WALLPAPER (Telegram-style, visible only to this participant)
+    # =========================
+    WALLPAPER_DEFAULT = "default"
+    WALLPAPER_PRESET = "preset"
+    WALLPAPER_IMAGE = "image"
+
+    WALLPAPER_TYPE_CHOICES = (
+        (WALLPAPER_DEFAULT, "Default"),
+        (WALLPAPER_PRESET, "Preset"),
+        (WALLPAPER_IMAGE, "Image"),
+    )
+
+    wallpaper_type = models.CharField(
+        max_length=20,
+        choices=WALLPAPER_TYPE_CHOICES,
+        default=WALLPAPER_DEFAULT,
+    )
+
+    wallpaper_value = models.CharField(max_length=255, blank=True)
+
+    wallpaper_image = models.ImageField(
+        upload_to=participant_wallpaper_path,
+        null=True,
+        blank=True,
+    )
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -130,6 +168,40 @@ class ConversationParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user} in {self.conversation}"
+
+    def save(self, *args, **kwargs):
+        try:
+            old_wallpaper_image = ConversationParticipant.objects.get(pk=self.pk).wallpaper_image
+        except ConversationParticipant.DoesNotExist:
+            old_wallpaper_image = None
+
+        if self.wallpaper_image and (not old_wallpaper_image or old_wallpaper_image != self.wallpaper_image):
+            try:
+                from PIL import Image, ImageOps
+                from io import BytesIO
+                from django.core.files.base import ContentFile
+
+                self.wallpaper_image.seek(0)
+                img = Image.open(self.wallpaper_image)
+                img = ImageOps.exif_transpose(img)
+
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+
+                img.thumbnail((1280, 1280))
+
+                buffer = BytesIO()
+                img.save(buffer, format="WEBP", quality=85)
+
+                self.wallpaper_image = ContentFile(buffer.getvalue(), name="wallpaper.webp")
+
+            except Exception as e:
+                print("Wallpaper image processing error:", e)
+
+        if old_wallpaper_image and self.wallpaper_image != old_wallpaper_image:
+            old_wallpaper_image.delete(save=False)
+
+        super().save(*args, **kwargs)
 
 
 class ConversationReport(models.Model):

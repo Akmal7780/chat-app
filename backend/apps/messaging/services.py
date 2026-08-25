@@ -80,7 +80,7 @@ def upload_part(user, key, upload_id, part_number, file):
     return res["ETag"].replace('"', "")
 
 
-def complete_upload(user, request, *, conversation_id, file_name, key, upload_id, parts, size, message_type=None):
+def complete_upload(user, request, *, conversation_id, file_name, key, upload_id, parts, size, message_type=None, view_once=False):
     _require_participant(user, conversation_id)
     _require_own_key(user, key)
 
@@ -102,6 +102,7 @@ def complete_upload(user, request, *, conversation_id, file_name, key, upload_id
         conversation_id=conversation_id,
         sender=user,
         message_type=file_type,
+        view_once=bool(view_once),
     )
 
     attachment = Attachment.objects.create(
@@ -143,6 +144,48 @@ def delete_attachment(user, attachment_id):
     )
     attachment.delete()
     return True
+
+
+def open_view_once_media(user, message):
+    """One-shot read of a view-once attachment: fetches the bytes, marks the
+    message viewed, then deletes the MinIO object — so this can only ever
+    succeed once, for the recipient, regardless of any cached/leaked URL."""
+    if not message.view_once:
+        raise ValidationError("This message is not view-once")
+
+    _require_participant(user, message.conversation_id)
+
+    if message.sender_id == user.id:
+        raise PermissionDenied("The sender can't reopen a view-once message")
+
+    if message.viewed_at:
+        raise ValidationError("This media has already been opened")
+
+    attachment = message.attachments.first()
+    if not attachment:
+        raise ValidationError("No attachment found")
+
+    s3 = get_s3()
+    obj = s3.get_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=attachment.file)
+    content = obj["Body"].read()
+    content_type = obj.get("ContentType") or "application/octet-stream"
+
+    message.viewed_at = timezone.now()
+    message.save(update_fields=["viewed_at"])
+
+    s3.delete_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=attachment.file)
+
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"chat_{message.conversation_id}",
+        {
+            "type": "message_viewed",
+            "message_id": message.id,
+            "viewed_at": str(message.viewed_at),
+        },
+    )
+
+    return {"content": content, "content_type": content_type}
 
 
 def toggle_reaction(user, message, emoji):

@@ -19,6 +19,9 @@ class AttachmentSerializer(serializers.ModelSerializer):
         if not obj.file:
             return None
 
+        if self.context.get("view_once"):
+            return None
+
         url = self.s3.generate_presigned_url(
             "get_object",
             Params={
@@ -49,7 +52,7 @@ class MessageSerializer(serializers.ModelSerializer):
         return AttachmentSerializer(
             obj.attachments.all(),
             many=True,
-            context={"request": request}
+            context={"request": request, "view_once": obj.view_once}
         ).data
 
     reply_to = serializers.SerializerMethodField()
@@ -82,6 +85,8 @@ class MessageSerializer(serializers.ModelSerializer):
             "updated_at",
             "status",
             "scheduled_at",
+            "view_once",
+            "viewed_at",
         ]
 
         read_only_fields = [
@@ -94,6 +99,8 @@ class MessageSerializer(serializers.ModelSerializer):
             "is_pinned",
             "created_at",
             "updated_at",
+            "view_once",
+            "viewed_at",
         ]
 
     # =========================

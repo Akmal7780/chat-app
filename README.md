@@ -32,6 +32,9 @@ A feature-complete, real-time chat application built with **Django + Channels** 
 * Auto-delete messages after a configurable interval (Celery Beat periodic task)
 * Export chat history as a downloadable, self-contained `.zip` (HTML transcript + real photos/videos/files/voice folders) or plain `.txt`, with content-type, size-limit, and date-range filters
 * Desktop, sound & **Web Push** notifications (delivered via a Service Worker even when the tab/app is closed), typing indicator, online/offline presence
+* **View-once photos & videos** — the recipient can open it exactly once; the file is deleted from storage the instant it's viewed, so it can never be re-fetched even via a leaked URL, and the sender can't reopen it either
+* Per-conversation, per-user **chat wallpaper** — named gradient presets or your own uploaded photo, set from the "⋮" menu on any chat
+* **Stickers & GIF** — a quick-send sticker panel plus live GIF search (Giphy), sent instantly with no bubble around the sticker
 
 ### 👥 Groups & Channels
 * Group creation with a real member-management panel (mute, add members, manage, leave — admin-gated)
@@ -237,6 +240,10 @@ MINIO_ENDPOINT=http://minio:9000
 MINIO_REGION=us-east-1
 
 DEEPSEEK_API_KEY=your_deepseek_api_key
+
+# GIF search (free tier at developers.giphy.com) — GIF search returns an
+# error without this, everything else in the app works fine
+GIPHY_API_KEY=your_giphy_api_key
 
 # coturn (WebRTC TURN relay)
 TURN_REALM=chatapp.local

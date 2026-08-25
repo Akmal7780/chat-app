@@ -19,6 +19,8 @@ class Message(models.Model):
     CALL = "call"
     SYSTEM = "system"
     POLL = "poll"
+    STICKER = "sticker"
+    GIF = "gif"
 
     MESSAGE_TYPES = (
         (TEXT, "Text"),
@@ -29,6 +31,8 @@ class Message(models.Model):
         (CALL, "Call"),
         (SYSTEM, "System"),
         (POLL, "Poll"),
+        (STICKER, "Sticker"),
+        (GIF, "Gif"),
     )
 
     CALL_MISSED_OR_CANCELED = "missed_or_canceled"
@@ -86,6 +90,14 @@ class Message(models.Model):
     # MessageViewSet.get_queryset). A Celery Beat task publishes it once
     # this time passes (see tasks.publish_scheduled_messages).
     scheduled_at = models.DateTimeField(null=True, blank=True)
+
+    # Telegram-style "view once" media: when True, the attachment's file_url
+    # is never exposed through the normal serializer (see
+    # AttachmentSerializer.get_file_url) — it's only readable once through
+    # MessageViewSet.view_once_open, which deletes the MinIO object right
+    # after serving it. viewed_at is None until that single open happens.
+    view_once = models.BooleanField(default=False)
+    viewed_at = models.DateTimeField(null=True, blank=True)
 
     # Only set when message_type == CALL
     call_status = models.CharField(

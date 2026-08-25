@@ -132,7 +132,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                message_type = "text"
+                message_type = data.get("message_type", "text")
+                if message_type not in ("text", "sticker", "gif"):
+                    message_type = "text"
 
                 message = await self.save_message(message_text, reply_to_id, message_type)
 
@@ -450,6 +452,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "user_id": event["user_id"],
             "username": event["username"],
             "read_at": event["read_at"]
+        }))
+
+    # VIEW-ONCE MEDIA OPENED — lets every open tab flip the bubble to
+    # "Opened" live (see services.open_view_once_media).
+    async def message_viewed(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "message_viewed",
+            "message_id": event["message_id"],
+            "viewed_at": event["viewed_at"],
         }))
 
     # DELIVERED EVENT

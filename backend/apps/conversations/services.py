@@ -116,6 +116,22 @@ def set_participant_flag(user, conversation, field, value):
     ).update(**{field: value})
 
 
+def set_wallpaper(user, conversation, wallpaper_type, wallpaper_value="", image_file=None):
+    participant = ConversationParticipant.objects.get(conversation=conversation, user=user)
+
+    if wallpaper_type == ConversationParticipant.WALLPAPER_IMAGE and image_file:
+        participant.wallpaper_type = ConversationParticipant.WALLPAPER_IMAGE
+        participant.wallpaper_value = ""
+        participant.wallpaper_image = image_file
+        participant.save()
+        return
+
+    participant.wallpaper_image = None
+    participant.wallpaper_type = wallpaper_type or ConversationParticipant.WALLPAPER_DEFAULT
+    participant.wallpaper_value = wallpaper_value or ""
+    participant.save()
+
+
 def mark_conversation_read(user, conversation):
     unread_message_ids = list(
         Message.objects.filter(

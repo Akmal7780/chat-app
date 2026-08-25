@@ -5,6 +5,8 @@ import MessageReactions from "./MessageReactions"
 import LinkPreviewCard from "./LinkPreviewCard"
 import MessageContextMenu from "./MessageContextMenu"
 import { extractFirstUrl, URL_REGEX } from "../utils/linkify"
+import { wallpaperStyleFor } from "./WallpaperPicker"
+import ViewOnceAttachment from "./ViewOnceAttachment"
 import api from "../api/axios"
 import "./MessageList.css" // Import the CSS file
 
@@ -191,7 +193,7 @@ function PollBlock({ message, currentUser }) {
   )
 }
 
-function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, onForwardRequest, loading }) {
+function MessageList({ messages, currentUser, selectedUser, onMessageVisible,socket,onReply, onForwardRequest, loading, wallpaperType, wallpaperValue, wallpaperUrl }) {
   const messagesEndRef = useRef(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [previewPDF, setPreviewPDF] = useState(null)
@@ -559,7 +561,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
   }
 
   return (
-    <div className="message-list-container">
+    <div className="message-list-container" style={wallpaperStyleFor(wallpaperType, wallpaperValue, wallpaperUrl)}>
       {!loading && messages.length === 0 ? (
         <div className="message-list-empty-state">
           <div className="message-list-empty-icon">💬</div>
@@ -637,7 +639,7 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                   }}>
                     {/* Message bubble with click handler */}
                     <div
-                      className={`message-list-bubble ${myMessage ? 'my-message' : 'other-message'} ${msg.is_pinned ? 'pinned' : ''}`}
+                      className={`message-list-bubble ${myMessage ? 'my-message' : 'other-message'} ${msg.is_pinned ? 'pinned' : ''} ${msg.message_type === 'sticker' || msg.message_type === 'gif' ? 'bubble-transparent' : ''}`}
                       onClick={(e) => handleClick(msg, e)}
                       onDoubleClick={() => handleDoubleClick(msg)}
                       onContextMenu={(e) => handleContextMenu(msg, e)}
@@ -668,7 +670,11 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                           </div>
                         )}
                         
-                        {msg.message_type === "poll" ? (
+                        {msg.message_type === "sticker" ? (
+                          <span className="message-list-sticker">{msg.content}</span>
+                        ) : msg.message_type === "gif" ? (
+                          <img src={msg.content} alt="GIF" className="message-list-gif" />
+                        ) : msg.message_type === "poll" ? (
                           <PollBlock message={msg} currentUser={currentUser} />
                         ) : msg.message_type === "call" ? (
                           <div className="message-list-call-row">
@@ -762,7 +768,13 @@ function MessageList({ messages, currentUser, selectedUser, onMessageVisible,soc
                           </div>
                         )}
                         
-                        {msg.attachments?.map((file) => {
+                        {msg.view_once ? (
+                          <ViewOnceAttachment
+                            message={msg}
+                            isMine={myMessage}
+                            fileType={msg.attachments?.[0]?.file_type}
+                          />
+                        ) : msg.attachments?.map((file) => {
                           const fileName = truncateFileName(file.original_name || getFileName(file.file_url))
                            // 🔥 INFECTED FILE
                           if (file.scan_status === "infected" || !file.file_url) {

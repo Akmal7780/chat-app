@@ -222,6 +222,21 @@ class ConversationViewSet(viewsets.ModelViewSet):
         return self._set_own_participant_flag(request, "is_muted", False)
 
     @action(detail=True, methods=["post"])
+    def wallpaper(self, request, pk=None):
+        conversation = self.get_object()
+        services.set_wallpaper(
+            request.user,
+            conversation,
+            request.data.get("wallpaper_type", "default"),
+            request.data.get("wallpaper_value", ""),
+            request.FILES.get("wallpaper_image"),
+        )
+
+        conversation = self.get_queryset().get(pk=conversation.pk)
+        serializer = self.get_serializer(conversation)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
     def mark_read(self, request, pk=None):
         conversation = self.get_object()
         services.mark_conversation_read(request.user, conversation)

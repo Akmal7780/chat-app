@@ -343,6 +343,10 @@ PUBLIC_MINIO_URL = "http://localhost:9004"
 
 DEEPSEEK_API_KEY = env("DEEPSEEK_API_KEY")
 
+# Optional — GIF search silently returns an error to the client if unset,
+# rather than the whole app failing to boot (see utils/giphy.py).
+GIPHY_API_KEY = env("GIPHY_API_KEY", default="")
+
 # Optional error monitoring — silently disabled when SENTRY_DSN is unset,
 # so this is a no-op for local dev unless you opt in via .env.
 SENTRY_DSN = env("SENTRY_DSN", default="")
