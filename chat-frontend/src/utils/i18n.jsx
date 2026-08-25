@@ -38,6 +38,10 @@ const DICTIONARY = {
     language_search: "Search",
     language_name_en: "English",
     language_name_ru: "Russian",
+    privacy_lastSeen: "Last seen & online",
+    privacy_profilePhotos: "Profile photos",
+    privacy_everybody: "Everybody",
+    privacy_nobody: "Nobody",
   },
   ru: {
     allChats: "Все чаты",
@@ -74,6 +78,10 @@ const DICTIONARY = {
     language_search: "Поиск",
     language_name_en: "Английский",
     language_name_ru: "Русский",
+    privacy_lastSeen: "Последнее посещение",
+    privacy_profilePhotos: "Фото профиля",
+    privacy_everybody: "Все",
+    privacy_nobody: "Никто",
   },
 }
 

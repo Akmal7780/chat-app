@@ -50,6 +50,20 @@ class User(AbstractUser):
     two_step_hint = models.CharField(max_length=255, blank=True)
     two_step_recovery_email = models.EmailField(blank=True, null=True)
 
+    # =========================
+    # PRIVACY — who can see my last-seen timestamp / profile photo.
+    # Only two tiers (no "Contacts") since this project has no contacts/
+    # address-book concept — see UserSerializer.get_last_seen/get_avatar_url.
+    # =========================
+    VISIBILITY_EVERYONE = "everyone"
+    VISIBILITY_NOBODY = "nobody"
+    VISIBILITY_CHOICES = (
+        (VISIBILITY_EVERYONE, "Everyone"),
+        (VISIBILITY_NOBODY, "Nobody"),
+    )
+    last_seen_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+    avatar_visibility = models.CharField(max_length=10, choices=VISIBILITY_CHOICES, default=VISIBILITY_EVERYONE)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -59,6 +59,8 @@ class UserSerializer(serializers.ModelSerializer):
             "last_seen",
             "is_blocked_by_me",
             "is_staff",
+            "last_seen_visibility",
+            "avatar_visibility",
         ]
 
     def get_is_blocked_by_me(self, obj):
@@ -73,6 +75,11 @@ class UserSerializer(serializers.ModelSerializer):
     def get_avatar_url(self, obj):
 
         if not obj.avatar:
+            return None
+
+        request = self.context.get("request")
+        if request and request.user.is_authenticated and request.user.id != obj.id \
+           and obj.avatar_visibility == User.VISIBILITY_NOBODY:
             return None
 
         s3 = get_s3()
@@ -97,6 +104,11 @@ class UserSerializer(serializers.ModelSerializer):
         # set_user_online) — that's a meaningful value, not "missing", so it
         # must NOT fall through to last_login here (an `or` would silently
         # replace "online" with a stale old login timestamp on every request).
+        request = self.context.get("request")
+        if request and request.user.is_authenticated and request.user.id != obj.id \
+           and obj.last_seen_visibility == User.VISIBILITY_NOBODY:
+            return None
+
         try:
             presence = obj.presence
         except UserPresence.DoesNotExist:

@@ -5,7 +5,9 @@ import BlockedUsersView from "./BlockedUsersView"
 import ActiveSessionsView from "./ActiveSessionsView"
 import TwoStepVerificationView from "./TwoStepVerificationView"
 import LocalPasscodeView from "./LocalPasscodeView"
+import VisibilityPickerView from "./VisibilityPickerView"
 import { hasPasscode } from "../utils/localPasscode"
+import { useLanguage } from "../utils/i18n"
 
 const SECURITY_ITEMS = [
   { icon: "🔑", label: "Passkeys", value: "Off" },
@@ -14,8 +16,6 @@ const SECURITY_ITEMS = [
 
 const PRIVACY_ITEMS = [
   { icon: "📞", label: "Phone number", value: "Nobody" },
-  { icon: "👁️", label: "Last seen & online", value: "Everybody" },
-  { icon: "🖼️", label: "Profile photos", value: "My contacts" },
   { icon: "↪️", label: "Forwarded messages", value: "Everybody" },
   { icon: "📹", label: "Calls", value: "Everybody" },
   { icon: "🎤", label: "Voice messages", value: "Everybody" },
@@ -28,14 +28,19 @@ const PRIVACY_ITEMS = [
 ]
 
 function PrivacySecurityView({ onBack }) {
+  const { t } = useLanguage()
   const [showBlocked, setShowBlocked] = useState(false)
   const [showSessions, setShowSessions] = useState(false)
   const [showTwoStep, setShowTwoStep] = useState(false)
   const [showPasscode, setShowPasscode] = useState(false)
+  const [showLastSeenPrivacy, setShowLastSeenPrivacy] = useState(false)
+  const [showAvatarPrivacy, setShowAvatarPrivacy] = useState(false)
   const [blockedCount, setBlockedCount] = useState(null)
   const [sessionCount, setSessionCount] = useState(null)
   const [twoStepEnabled, setTwoStepEnabled] = useState(null)
   const [passcodeEnabled, setPasscodeEnabled] = useState(hasPasscode())
+  const [lastSeenVisibility, setLastSeenVisibility] = useState("everyone")
+  const [avatarVisibility, setAvatarVisibility] = useState("everyone")
 
   useEffect(() => {
     api.get("/users/blocked/")
@@ -55,6 +60,15 @@ function PrivacySecurityView({ onBack }) {
       .catch((err) => console.error("2FA status error:", err))
   }, [showTwoStep])
 
+  useEffect(() => {
+    api.get("/users/users/me/")
+      .then((res) => {
+        setLastSeenVisibility(res.data.last_seen_visibility || "everyone")
+        setAvatarVisibility(res.data.avatar_visibility || "everyone")
+      })
+      .catch((err) => console.error("Privacy settings fetch error:", err))
+  }, [showLastSeenPrivacy, showAvatarPrivacy])
+
   const handleComingSoon = (label) => {
     toast(`${label} — coming soon`, { icon: "🚧" })
   }
@@ -73,6 +87,30 @@ function PrivacySecurityView({ onBack }) {
 
   if (showPasscode) {
     return <LocalPasscodeView onBack={() => { setShowPasscode(false); setPasscodeEnabled(hasPasscode()) }} />
+  }
+
+  if (showLastSeenPrivacy) {
+    return (
+      <VisibilityPickerView
+        titleKey="privacy_lastSeen"
+        field="last_seen_visibility"
+        value={lastSeenVisibility}
+        onChanged={setLastSeenVisibility}
+        onBack={() => setShowLastSeenPrivacy(false)}
+      />
+    )
+  }
+
+  if (showAvatarPrivacy) {
+    return (
+      <VisibilityPickerView
+        titleKey="privacy_profilePhotos"
+        field="avatar_visibility"
+        value={avatarVisibility}
+        onChanged={setAvatarVisibility}
+        onBack={() => setShowAvatarPrivacy(false)}
+      />
+    )
   }
 
   return (
@@ -125,6 +163,23 @@ function PrivacySecurityView({ onBack }) {
 
       <div className="settings-list">
         <div className="settings-list-section-label">Privacy</div>
+
+        <button className="settings-list-item" onClick={() => setShowLastSeenPrivacy(true)}>
+          <span className="settings-list-icon">👁️</span>
+          <span>{t("privacy_lastSeen")}</span>
+          <span className="settings-list-value">
+            {lastSeenVisibility === "nobody" ? t("privacy_nobody") : t("privacy_everybody")}
+          </span>
+        </button>
+
+        <button className="settings-list-item" onClick={() => setShowAvatarPrivacy(true)}>
+          <span className="settings-list-icon">🖼️</span>
+          <span>{t("privacy_profilePhotos")}</span>
+          <span className="settings-list-value">
+            {avatarVisibility === "nobody" ? t("privacy_nobody") : t("privacy_everybody")}
+          </span>
+        </button>
+
         {PRIVACY_ITEMS.map(({ icon, label, value }) => (
           <button
             key={label}
